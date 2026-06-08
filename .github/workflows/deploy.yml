@@ -22,7 +22,7 @@ jobs:
               run: dotnet restore AdrienCoder.slnx
 
             - name: Build
-              run: dotnet build AdrienCoder.sln --configuration Release --no-restore
+              run: dotnet build AdrienCoder.slnx --configuration Release --no-restore
 
             - name: Publish
               run: dotnet publish AdrienCoder.Api/AdrienCoder.Api.csproj -c Release -o publish
