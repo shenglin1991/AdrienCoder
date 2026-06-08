@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace AdrienCoder.Api.Services;
 
-public class OllamaService
+public class OllamaService : ILLMService
 {
     private readonly HttpClient _httpClient;
 

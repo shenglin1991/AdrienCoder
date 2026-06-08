@@ -9,16 +9,16 @@ namespace AdrienCoder.Api.Controllers;
 public class AskRepoController : ControllerBase
 {
     private readonly RepoScannerService _repoScannerService;
-    private readonly OllamaService _ollamaService;
+    private readonly ILLMService _llmService;
     private readonly RepoIndexStore _repoIndexStore;
 
     public AskRepoController(
     RepoScannerService repoScannerService,
-    OllamaService ollamaService,
+    ILLMService llmService,
     RepoIndexStore repoIndexStore)
     {
         _repoScannerService = repoScannerService;
-        _ollamaService = ollamaService;
+        _llmService = llmService;
         _repoIndexStore = repoIndexStore;
     }
 
@@ -44,7 +44,7 @@ public class AskRepoController : ControllerBase
 
         var context = _repoScannerService.BuildContextFromIndex(indexedFiles, request.Question);
 
-        var answer = await _ollamaService.AskWithContextAsync(request.Question, context);
+        var answer = await _llmService.AskWithContextAsync(request.Question, context);
 
         return Ok(new AskResponse
         {

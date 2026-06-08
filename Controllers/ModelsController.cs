@@ -7,17 +7,17 @@ namespace AdrienCoder.Api.Controllers;
 [Route("api/[controller]")]
 public class ModelsController : ControllerBase
 {
-    private readonly OllamaService _ollamaService;
+    private readonly ILLMService _llmService;
 
-    public ModelsController(OllamaService ollamaService)
+    public ModelsController(ILLMService llmService)
     {
-        _ollamaService = ollamaService;
+        _llmService = llmService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Get()
     {
-        var models = await _ollamaService.GetModelsAsync();
+        var models = await _llmService.GetModelsAsync();
         return Content(models, "application/json");
     }
 }

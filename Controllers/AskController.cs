@@ -8,11 +8,11 @@ namespace AdrienCoder.Api.Controllers;
 [Route("api/[controller]")]
 public class AskController : ControllerBase
 {
-    private readonly OllamaService _ollamaService;
+    private readonly ILLMService _llmService;
 
-    public AskController(OllamaService ollamaService)
+    public AskController(ILLMService llmService)
     {
-        _ollamaService = ollamaService;
+        _llmService = llmService;
     }
 
     [HttpPost]
@@ -23,7 +23,7 @@ public class AskController : ControllerBase
             return BadRequest("Question is required.");
         }
 
-        var answer = await _ollamaService.AskAsync(request.Question);
+        var answer = await _llmService.AskAsync(request.Question);
 
         return Ok(new AskResponse
         {

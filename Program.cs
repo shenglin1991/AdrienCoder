@@ -1,5 +1,6 @@
 using AdrienCoder.Api.Services;
-
+using AdrienCoder.Api.Models;
+using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -9,11 +10,35 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddHttpClient<OllamaService>(client =>
+builder.Services.Configure<LLMOptions>(
+    builder.Configuration.GetSection("LLM"));
+
+
+builder.Services.AddHttpClient<OllamaService>((sp, client) =>
 {
-    client.BaseAddress = new Uri("http://localhost:11434");
-    client.Timeout = TimeSpan.FromMinutes(5);
+    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+    client.Timeout = TimeSpan.FromMinutes(10);
 });
+
+builder.Services.AddHttpClient<OpenAiCompatibleService>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
+
+builder.Services.AddScoped<ILLMService>(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
+
+    return options.Provider switch
+    {
+        "OpenAICompatible" => sp.GetRequiredService<OpenAiCompatibleService>(),
+        _ => sp.GetRequiredService<OllamaService>()
+    };
+});
+
 builder.Services.AddScoped<RepoScannerService>();
 builder.Services.AddSingleton<RepoIndexStore>();
 
