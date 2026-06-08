@@ -34,11 +34,15 @@ public class OpenAiCompatibleService : ILLMService
                 new { role = "user", content = question }
             },
             temperature = 0.2,
-            max_tokens = 2000
+            max_tokens = 800
         };
 
-        var response = await _httpClient.PostAsJsonAsync("/chat/completions", payload);
-        response.EnsureSuccessStatusCode();
+        var response = await _httpClient.PostAsJsonAsync("chat/completions", payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new Exception($"LLM error {(int)response.StatusCode}: {error}");
+        }
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
@@ -67,7 +71,7 @@ public class OpenAiCompatibleService : ILLMService
 
     public async Task<string> GetModelsAsync()
     {
-        var response = await _httpClient.GetAsync("/models");
+        var response = await _httpClient.GetAsync("models");
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadAsStringAsync();

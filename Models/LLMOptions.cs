@@ -1,5 +1,6 @@
 namespace AdrienCoder.Api.Models;
 
+using Microsoft.Extensions.Options;
 public class LLMOptions
 {
     public string Provider { get; set; } = "Ollama";

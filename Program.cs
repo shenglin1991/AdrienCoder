@@ -12,7 +12,19 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.Configure<LLMOptions>(
     builder.Configuration.GetSection("LLM"));
+builder.Services.Configure<QdrantOptions>(
+    builder.Configuration.GetSection("Qdrant"));
 
+builder.Services.AddHttpClient<QdrantService>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+    client.BaseAddress = new Uri($"http://{options.Host}:{options.Port}/");
+    client.Timeout = TimeSpan.FromSeconds(10);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    UseProxy = false
+});
 
 builder.Services.AddHttpClient<OllamaService>((sp, client) =>
 {

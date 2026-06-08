@@ -83,7 +83,7 @@ public class RepoScannerService
     public string BuildContextFromIndex(
     IReadOnlyList<IndexedFile> indexedFiles,
     string question,
-    int maxFiles = 20)
+    int maxFiles = 5)
     {
         var questionWords = question
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -108,8 +108,8 @@ public class RepoScannerService
         {
             var content = file.Content;
 
-            if (content.Length > 6000)
-                content = content[..6000];
+            if (content.Length > 2000)
+                content = content[..2000];
 
             sb.AppendLine($"--- FILE: {file.Path} ---");
             sb.AppendLine(content);
