@@ -51,7 +51,18 @@ builder.Services.AddScoped<ILLMService>(sp =>
     };
 });
 
+builder.Services.Configure<EmbeddingOptions>(
+    builder.Configuration.GetSection("Embedding"));
+
+builder.Services.AddHttpClient<EmbeddingService>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<EmbeddingOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseUrl);
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
+
 builder.Services.AddScoped<RepoScannerService>();
+builder.Services.AddScoped<CodeChunkerService>();
 builder.Services.AddSingleton<RepoIndexStore>();
 
 var app = builder.Build();
