@@ -11,15 +11,21 @@ public class AskRepoController : ControllerBase
     private readonly RepoScannerService _repoScannerService;
     private readonly ILLMService _llmService;
     private readonly RepoIndexStore _repoIndexStore;
+    private readonly QdrantService _qdrantService;
+    private readonly EmbeddingService _embeddingService;
 
     public AskRepoController(
     RepoScannerService repoScannerService,
     ILLMService llmService,
-    RepoIndexStore repoIndexStore)
+    RepoIndexStore repoIndexStore,
+    QdrantService qdrantService,
+    EmbeddingService embeddingService)
     {
         _repoScannerService = repoScannerService;
         _llmService = llmService;
         _repoIndexStore = repoIndexStore;
+        _qdrantService = qdrantService;
+        _embeddingService = embeddingService;
     }
 
     [HttpPost]
@@ -35,14 +41,17 @@ public class AskRepoController : ControllerBase
             return BadRequest("RepoPath is required.");
         }
 
-        var indexedFiles = _repoIndexStore.GetFiles();
+        var chunks = await _qdrantService.SearchAsync(request.Question, 5, _embeddingService);
 
-        if (indexedFiles.Count == 0)
+        if (chunks.Count == 0)
         {
-            return BadRequest("No repo indexed. Call /api/IndexRepo first.");
+            return BadRequest("No relevant chunks found. Call /api/VectorIndexRepo first.");
         }
 
-        var context = _repoScannerService.BuildContextFromIndex(indexedFiles, request.Question);
+        var context = string.Join("\n\n", chunks.Select(c => $"""
+        --- FILE: {c.FilePath} | CHUNK: {c.ChunkIndex} | SCORE: {c.Score} ---
+        {c.Content}
+        """));
 
         var answer = await _llmService.AskWithContextAsync(request.Question, context);
 

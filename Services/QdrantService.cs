@@ -92,7 +92,7 @@ public class QdrantService
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<string> SearchAsync(
+    public async Task<List<VectorSearchResult>> SearchAsync(
     string question,
     int limit,
     EmbeddingService embeddingService)
@@ -112,6 +112,51 @@ public class QdrantService
 
         response.EnsureSuccessStatusCode();
 
-        return await response.Content.ReadAsStringAsync();
+        var json = await response.Content.ReadAsStringAsync();
+
+        using var doc = JsonDocument.Parse(json);
+
+        var results = new List<VectorSearchResult>();
+
+        foreach (var item in doc.RootElement.GetProperty("result").EnumerateArray())
+        {
+            var payloadElement = item.GetProperty("payload");
+
+            results.Add(new VectorSearchResult
+            {
+                Score = item.GetProperty("score").GetSingle(),
+                FilePath = GetString(payloadElement, "FilePath", "filePath"),
+                Content = GetString(payloadElement, "Content", "content"),
+                ChunkIndex = GetInt(payloadElement, "ChunkIndex", "chunkIndex")
+            });
+        }
+
+        return results;
+    }
+
+    private static string GetString(JsonElement element, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (element.TryGetProperty(key, out var value))
+            {
+                return value.GetString() ?? string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static int GetInt(JsonElement element, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (element.TryGetProperty(key, out var value))
+            {
+                return value.GetInt32();
+            }
+        }
+
+        return 0;
     }
 }

@@ -32,6 +32,6 @@ public class VectorSearchController : ControllerBase
             request.Limit,
             _embeddingService);
 
-        return Content(result, "application/json");
+        return Ok(result);
     }
 }
