@@ -19,7 +19,7 @@ jobs:
                   dotnet-version: '9.0.x'
 
             - name: Restore
-              run: dotnet restore AdrienCoder.sln
+              run: dotnet restore AdrienCoder.slnx
 
             - name: Build
               run: dotnet build AdrienCoder.sln --configuration Release --no-restore
