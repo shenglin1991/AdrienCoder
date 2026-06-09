@@ -27,6 +27,13 @@ jobs:
             - name: Publish
               run: dotnet publish AdrienCoder.Api.csproj -c Release -o publish
 
+            - name: Debug secrets
+              run: |
+                  echo "HOST='${{ secrets.VPS_HOST }}'"
+                  echo "USER='${{ secrets.VPS_USER }}'"
+                  echo "KEY LENGTH=${#VPS_KEY}"
+              env:
+                  VPS_KEY: ${{ secrets.VPS_SSH_KEY }}
             - name: Setup SSH
               run: |
                   mkdir -p ~/.ssh
