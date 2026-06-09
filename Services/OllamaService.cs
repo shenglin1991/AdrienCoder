@@ -12,6 +12,19 @@ public class OllamaService : ILLMService
         _httpClient = httpClient;
     }
 
+    public async Task<bool> IsHealthyAsync()
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("api/tags");
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<string> AskAsync(string question)
     {
         var payload = new

@@ -18,6 +18,19 @@ public class QdrantService
         _options = options.Value;
     }
 
+    public async Task<bool> IsHealthyAsync()
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("collections");
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<string> GetStatusAsync()
     {
         await CreateCollectionIfNotExistsAsync();

@@ -23,6 +23,19 @@ public class OpenAiCompatibleService : ILLMService
         }
     }
 
+    public async Task<bool> IsHealthyAsync()
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("models");
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<string> AskAsync(string question)
     {
         var payload = new
