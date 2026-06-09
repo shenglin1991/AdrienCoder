@@ -26,16 +26,10 @@ public class StatusController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<AppStatusResponse>> Get()
     {
-        var qdrantOk = await _qdrantService.IsHealthyAsync();
-        var llmOk = await _llmService.IsHealthyAsync();
-
-        return Ok(new AppStatusResponse
+        return Ok(new
         {
             Api = "ok",
-            Qdrant = qdrantOk ? "ok" : "unavailable",
-            Llm = llmOk ? "ok" : "unavailable",
-            Model = _llmOptions.Model,
-            Time = DateTimeOffset.UtcNow
+            Test = "controller"
         });
     }
 }
