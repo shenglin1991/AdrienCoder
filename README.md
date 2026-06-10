@@ -178,4 +178,4 @@ dans la sortie de l'application, généralement sous `/swagger`.
 - Conserver plusieurs dépôts dans des collections Qdrant séparées.
 - Ajouter des tests unitaires et des tests d'intégration.
 - Prendre en charge le streaming des réponses.
-  ssh -L 11434:localhost:11434 ubuntu@ip_serveur-vps
+  ssh -N -L 11434:localhost:11434 -L 6333:localhost:6333 ubuntu@ip_serveur-vps
