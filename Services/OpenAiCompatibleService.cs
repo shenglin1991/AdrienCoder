@@ -9,12 +9,17 @@ namespace AdrienCoder.Api.Services;
 public class OpenAiCompatibleService : ILLMService
 {
     private readonly HttpClient _httpClient;
-    private readonly LLMOptions _options;
+    private readonly OpenAiCompatibleOptions _options;
+    private readonly LLMOptions _llmOptions;
 
-    public OpenAiCompatibleService(HttpClient httpClient, IOptions<LLMOptions> options)
+    public OpenAiCompatibleService(
+        HttpClient httpClient,
+        IOptions<OpenAiCompatibleOptions> options,
+        IOptions<LLMOptions> llmOptions)
     {
         _httpClient = httpClient;
         _options = options.Value;
+        _llmOptions = llmOptions.Value;
 
         if (!string.IsNullOrWhiteSpace(_options.ApiKey))
         {
@@ -43,7 +48,7 @@ public class OpenAiCompatibleService : ILLMService
             model = _options.Model,
             messages = new[]
             {
-                new { role = "system", content = _options.SystemPrompt },
+                new { role = "system", content = _llmOptions.SystemPrompt },
                 new { role = "user", content = question }
             },
             temperature = 0.2,

@@ -12,6 +12,10 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.Configure<LLMOptions>(
     builder.Configuration.GetSection("LLM"));
+builder.Services.Configure<OpenAiCompatibleOptions>(
+    builder.Configuration.GetSection("OpenAICompatible"));
+builder.Services.Configure<OllamaOptions>(
+    builder.Configuration.GetSection("Ollama"));
 builder.Services.Configure<QdrantOptions>(
     builder.Configuration.GetSection("Qdrant"));
 
@@ -28,28 +32,21 @@ builder.Services.AddHttpClient<QdrantService>((sp, client) =>
 
 builder.Services.AddHttpClient<OllamaService>((sp, client) =>
 {
-    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
+    var options = sp.GetRequiredService<IOptions<OllamaOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
     client.Timeout = TimeSpan.FromMinutes(10);
 });
 
 builder.Services.AddHttpClient<OpenAiCompatibleService>((sp, client) =>
 {
-    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
+    var options = sp.GetRequiredService<IOptions<OpenAiCompatibleOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
-    client.Timeout = TimeSpan.FromMinutes(10);
+    client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddScoped<LlmRouterService>();
 builder.Services.AddScoped<ILLMService>(sp =>
-{
-    var options = sp.GetRequiredService<IOptions<LLMOptions>>().Value;
-
-    return options.Provider switch
-    {
-        "OpenAICompatible" => sp.GetRequiredService<OpenAiCompatibleService>(),
-        _ => sp.GetRequiredService<OllamaService>()
-    };
-});
+    sp.GetRequiredService<LlmRouterService>());
 
 builder.Services.Configure<EmbeddingOptions>(
     builder.Configuration.GetSection("Embedding"));
@@ -63,6 +60,7 @@ builder.Services.AddHttpClient<EmbeddingService>((sp, client) =>
 
 builder.Services.AddScoped<RepoScannerService>();
 builder.Services.AddScoped<CodeChunkerService>();
+builder.Services.AddScoped<RepositoryIndexingService>();
 builder.Services.AddSingleton<RepoIndexStore>();
 
 var app = builder.Build();

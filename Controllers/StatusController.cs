@@ -10,26 +10,47 @@ namespace AdrienCoder.Api.Controllers;
 public class StatusController : ControllerBase
 {
     private readonly QdrantService _qdrantService;
-    private readonly ILLMService _llmService;
-    private readonly LLMOptions _llmOptions;
+    private readonly LlmRouterService _llmRouterService;
+    private readonly OpenAiCompatibleOptions _openAiOptions;
+    private readonly OllamaOptions _ollamaOptions;
 
     public StatusController(
         QdrantService qdrantService,
-        ILLMService llmService,
-        IOptions<LLMOptions> llmOptions)
+        LlmRouterService llmRouterService,
+        IOptions<OpenAiCompatibleOptions> openAiOptions,
+        IOptions<OllamaOptions> ollamaOptions)
     {
         _qdrantService = qdrantService;
-        _llmService = llmService;
-        _llmOptions = llmOptions.Value;
+        _llmRouterService = llmRouterService;
+        _openAiOptions = openAiOptions.Value;
+        _ollamaOptions = ollamaOptions.Value;
     }
 
     [HttpGet]
     public async Task<ActionResult<AppStatusResponse>> Get()
     {
-        return Ok(new
+        var qdrantOk = await _qdrantService.IsHealthyAsync();
+        var activeProvider = await _llmRouterService.GetActiveProviderAsync();
+        var llmOk = activeProvider != "None";
+
+        return Ok(new AppStatusResponse
         {
             Api = "ok",
-            Test = "controller"
+            Qdrant = qdrantOk ? "ok" : "unavailable",
+            Llm = llmOk ? "ok" : "unavailable",
+            ActiveProvider = activeProvider,
+            Model = GetActiveModel(activeProvider),
+            Time = DateTimeOffset.UtcNow
         });
+    }
+
+    private string? GetActiveModel(string activeProvider)
+    {
+        return activeProvider switch
+        {
+            LlmRouterService.OpenAiCompatibleProvider => _openAiOptions.Model,
+            LlmRouterService.OllamaProvider => _ollamaOptions.Model,
+            _ => null
+        };
     }
 }

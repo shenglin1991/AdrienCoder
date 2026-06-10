@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using AdrienCoder.Api.Models;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
@@ -81,7 +83,7 @@ public class QdrantService
 
             points.Add(new
             {
-                id = Guid.NewGuid().ToString(),
+                id = CreatePointId(chunk.Id),
                 vector,
                 payload = new
                 {
@@ -103,6 +105,12 @@ public class QdrantService
             body);
 
         response.EnsureSuccessStatusCode();
+    }
+
+    private static string CreatePointId(string chunkId)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(chunkId));
+        return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
     public async Task<List<VectorSearchResult>> SearchAsync(

@@ -1,14 +1,8 @@
 namespace AdrienCoder.Api.Models;
 
-using Microsoft.Extensions.Options;
 public class LLMOptions
 {
-    public string Provider { get; set; } = "Ollama";
-
-    public string BaseUrl { get; set; } = "http://localhost:11434";
-
-    public string ApiKey { get; set; } = string.Empty;
-
-    public string Model { get; set; } = "qwen2.5-coder:7b";
+    public string PreferredProvider { get; set; } = "OpenAICompatible";
+    public string FallbackProvider { get; set; } = "Ollama";
     public string SystemPrompt { get; set; } = string.Empty;
 }
