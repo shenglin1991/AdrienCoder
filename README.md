@@ -68,7 +68,7 @@ Le fournisseur principal et le fournisseur de secours sont configurables dans
 
 ## Analyse d'un dépôt
 
-L'endpoint `POST /api/ask/repo` exécute le pipeline suivant :
+L'indexation d'un dépôt exécute le pipeline suivant :
 
 1. Scan des fichiers pris en charge dans le dépôt.
 2. Exclusion des répertoires générés comme `bin`, `obj`, `.git` et
@@ -78,10 +78,15 @@ L'endpoint `POST /api/ask/repo` exécute le pipeline suivant :
 5. Indexation des fragments dans Qdrant.
 6. Recherche des fragments les plus proches de la question.
 7. Construction du contexte envoyé au LLM.
-8. Génération de la réponse finale.
+8. Enregistrement de l'index actif dans Qdrant.
 
 Les identifiants des points Qdrant sont déterministes. Une nouvelle indexation
 remplace donc les fragments existants au lieu de créer des doublons.
+
+Avant chaque analyse, AdrienCoder calcule une empreinte légère à partir des
+chemins, tailles et dates de modification des fichiers. Si le dépôt n'a pas
+changé, les contenus ne sont pas relus et les embeddings Qdrant ne sont pas
+recalculés.
 
 ## Configuration
 
@@ -126,7 +131,7 @@ d'environnement ou une configuration locale non versionnée.
 | Méthode | Route           | Description                                     |
 | ------- | --------------- | ----------------------------------------------- |
 | `POST`  | `/api/ask`      | Pose une question générale au LLM.              |
-| `POST`  | `/api/ask/repo` | Analyse un dépôt puis répond avec son contexte. |
+| `POST`  | `/api/ask/repo` | Répond avec le contexte de l'index Qdrant actif. |
 
 ### Index
 

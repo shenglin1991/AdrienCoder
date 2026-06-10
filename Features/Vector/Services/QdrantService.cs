@@ -13,6 +13,8 @@ namespace AdrienCoder.Api.Features.Vector.Services;
 /// </summary>
 public class QdrantService
 {
+    private const string ActiveIndexMarker = "active-repository-state";
+
     private readonly HttpClient _httpClient;
     private readonly QdrantOptions _options;
     private readonly EmbeddingOptions _embeddingOptions;
@@ -79,7 +81,113 @@ public class QdrantService
         createResponse.EnsureSuccessStatusCode();
     }
 
-    public async Task UpsertChunksAsync(IReadOnlyList<CodeChunk> chunks)
+    public async Task<int?> GetIndexedChunkCountAsync(
+        string repositoryPath,
+        string repositorySignature)
+    {
+        await CreateCollectionIfNotExistsAsync();
+
+        var markerId = CreatePointId(
+            $"repository-state::{repositoryPath}");
+        var request = new
+        {
+            ids = new[] { markerId },
+            with_payload = true,
+            with_vector = false
+        };
+
+        var response = await _httpClient.PostAsJsonAsync(
+            $"collections/{_options.CollectionName}/points",
+            request);
+
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        var points = document.RootElement.GetProperty("result");
+
+        if (points.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var payload = points[0].GetProperty("payload");
+        var storedSignature = GetString(
+            payload,
+            "repositorySignature",
+            "RepositorySignature");
+
+        if (!string.Equals(
+            storedSignature,
+            repositorySignature,
+            StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return GetInt(payload, "chunkCount", "ChunkCount");
+    }
+
+    public async Task<VectorIndexState?> GetActiveIndexAsync()
+    {
+        await CreateCollectionIfNotExistsAsync();
+
+        var markerId = CreatePointId(ActiveIndexMarker);
+        var payload = await GetPointPayloadAsync(markerId);
+
+        if (payload is null)
+        {
+            return null;
+        }
+
+        var repositoryPath = GetString(
+            payload.Value,
+            "repositoryPath",
+            "RepositoryPath");
+        var repositorySignature = GetString(
+            payload.Value,
+            "repositorySignature",
+            "RepositorySignature");
+
+        if (string.IsNullOrWhiteSpace(repositoryPath)
+            || string.IsNullOrWhiteSpace(repositorySignature))
+        {
+            return null;
+        }
+
+        return new VectorIndexState(
+            repositoryPath,
+            repositorySignature,
+            GetInt(payload.Value, "chunkCount", "ChunkCount"));
+    }
+
+    public async Task SetActiveIndexAsync(
+        string repositoryPath,
+        string repositorySignature,
+        int chunkCount)
+    {
+        await CreateCollectionIfNotExistsAsync();
+
+        var response = await _httpClient.PutAsJsonAsync(
+            $"collections/{_options.CollectionName}/points?wait=true",
+            new
+            {
+                points = new[]
+                {
+                    CreateActiveIndexPoint(
+                        repositoryPath,
+                        repositorySignature,
+                        chunkCount)
+                }
+            });
+
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task UpsertChunksAsync(
+        IReadOnlyList<CodeChunk> chunks,
+        string repositoryPath,
+        string repositorySignature)
     {
         await CreateCollectionIfNotExistsAsync();
 
@@ -95,6 +203,9 @@ public class QdrantService
                 vector,
                 payload = new
                 {
+                    pointType = "chunk",
+                    repositoryPath,
+                    repositorySignature,
                     chunk.Id,
                     chunk.FilePath,
                     chunk.Content,
@@ -102,6 +213,26 @@ public class QdrantService
                 }
             });
         }
+
+        // The marker persists the repository signature across API restarts.
+        points.Add(new
+        {
+            id = CreatePointId($"repository-state::{repositoryPath}"),
+            vector = new float[_embeddingOptions.VectorSize],
+            payload = new
+            {
+                pointType = "repositoryState",
+                repositoryPath,
+                repositorySignature,
+                chunkCount = chunks.Count
+            }
+        });
+
+        // Ask/repo uses this stable marker to locate the latest completed index.
+        points.Add(CreateActiveIndexPoint(
+            repositoryPath,
+            repositorySignature,
+            chunks.Count));
 
         var body = new
         {
@@ -115,6 +246,52 @@ public class QdrantService
         response.EnsureSuccessStatusCode();
     }
 
+    private object CreateActiveIndexPoint(
+        string repositoryPath,
+        string repositorySignature,
+        int chunkCount)
+    {
+        return new
+        {
+            id = CreatePointId(ActiveIndexMarker),
+            vector = new float[_embeddingOptions.VectorSize],
+            payload = new
+            {
+                pointType = "activeRepositoryState",
+                repositoryPath,
+                repositorySignature,
+                chunkCount
+            }
+        };
+    }
+
+    private async Task<JsonElement?> GetPointPayloadAsync(string pointId)
+    {
+        var request = new
+        {
+            ids = new[] { pointId },
+            with_payload = true,
+            with_vector = false
+        };
+
+        var response = await _httpClient.PostAsJsonAsync(
+            $"collections/{_options.CollectionName}/points",
+            request);
+
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+        var points = document.RootElement.GetProperty("result");
+
+        if (points.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        return points[0].GetProperty("payload").Clone();
+    }
+
     private static string CreatePointId(string chunkId)
     {
         // Stable IDs make repeated repository indexing replace points instead of duplicating them.
@@ -124,15 +301,45 @@ public class QdrantService
 
     public async Task<List<VectorSearchResult>> SearchAsync(
         string question,
-        int limit)
+        int limit,
+        string? repositoryPath = null,
+        string? repositorySignature = null)
     {
         var vector = await _embeddingService.EmbedAsync(question);
+
+        var conditions = new List<object>
+        {
+            new
+            {
+                key = "pointType",
+                match = new { value = "chunk" }
+            }
+        };
+
+        if (!string.IsNullOrWhiteSpace(repositoryPath)
+            && !string.IsNullOrWhiteSpace(repositorySignature))
+        {
+            conditions.Add(new
+            {
+                key = "repositoryPath",
+                match = new { value = repositoryPath }
+            });
+            conditions.Add(new
+            {
+                key = "repositorySignature",
+                match = new { value = repositorySignature }
+            });
+        }
 
         var payload = new
         {
             vector,
             limit,
-            with_payload = true
+            with_payload = true,
+            filter = new
+            {
+                must = conditions
+            }
         };
 
         var response = await _httpClient.PostAsJsonAsync(

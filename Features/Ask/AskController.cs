@@ -37,22 +37,13 @@ public class AskController : ControllerBase
             return BadRequest("Question is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(request.RepoPath))
-        {
-            return BadRequest("RepoPath is required.");
-        }
-
         try
         {
-            var answer = await _askService.AskRepositoryAsync(
-                request.RepoPath,
-                request.Question);
+            var answer = await _askService.AskRepositoryAsync(request.Question);
 
             return Ok(new AskResponse { Answer = answer });
         }
-        catch (Exception exception) when (
-            exception is DirectoryNotFoundException
-            or InvalidOperationException)
+        catch (InvalidOperationException exception)
         {
             return BadRequest(exception.Message);
         }

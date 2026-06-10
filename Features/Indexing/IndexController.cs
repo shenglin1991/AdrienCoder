@@ -24,8 +24,16 @@ public class IndexController : ControllerBase
 
         try
         {
-            var files = _repositoryIndexingService.IndexRepository(repoPath);
-            return Ok(new { indexedFiles = files.Count });
+            var result = _repositoryIndexingService.IndexRepository(repoPath);
+
+            return Ok(new
+            {
+                indexedFiles = result.Files.Count,
+                updated = result.WasUpdated,
+                message = result.WasUpdated
+                    ? "Repository scanned and loaded."
+                    : "Repository already up to date."
+            });
         }
         catch (Exception exception) when (
             exception is DirectoryNotFoundException

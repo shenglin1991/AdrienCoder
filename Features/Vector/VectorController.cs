@@ -54,7 +54,10 @@ public class VectorController : ControllerBase
             {
                 indexedFiles = result.IndexedFiles,
                 chunks = result.Chunks,
-                message = "Chunks indexed in Qdrant."
+                updated = result.WasUpdated,
+                message = result.WasUpdated
+                    ? "Chunks indexed in Qdrant."
+                    : "Vector index already up to date."
             });
         }
         catch (InvalidOperationException exception)

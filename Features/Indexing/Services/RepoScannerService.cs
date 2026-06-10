@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using AdrienCoder.Api.Features.Indexing.Models;
 
 namespace AdrienCoder.Api.Features.Indexing.Services;
@@ -18,18 +20,61 @@ public class RepoScannerService
         ".angular", ".nx", ".vs"
     };
 
-    public List<IndexedFile> IndexRepo(string repoPath)
+    public RepositoryManifest CreateManifest(string repoPath)
     {
-        return Directory
+        var normalizedPath = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(repoPath));
+
+        var files = Directory
             .EnumerateFiles(repoPath, "*.*", SearchOption.AllDirectories)
             .Where(IsAllowedFile)
+            .Select(file =>
+            {
+                var fileInfo = new FileInfo(file);
+
+                return new RepositoryFileMetadata(
+                    fileInfo.FullName,
+                    fileInfo.Length,
+                    fileInfo.LastWriteTimeUtc);
+            })
+            .OrderBy(file => file.Path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new RepositoryManifest(
+            normalizedPath,
+            CreateSignature(normalizedPath, files),
+            files);
+    }
+
+    public List<IndexedFile> ReadFiles(RepositoryManifest manifest)
+    {
+        return manifest.Files
             .Select(file => new IndexedFile
             {
-                Path = file,
-                Content = File.ReadAllText(file),
-                LastModified = File.GetLastWriteTimeUtc(file)
+                Path = file.Path,
+                Content = File.ReadAllText(file.Path),
+                LastModified = file.LastModified
             })
             .ToList();
+    }
+
+    private static string CreateSignature(
+        string repositoryPath,
+        IReadOnlyList<RepositoryFileMetadata> files)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        foreach (var file in files)
+        {
+            var relativePath = Path.GetRelativePath(
+                repositoryPath,
+                file.Path);
+            var metadata = $"{relativePath}|{file.Length}|{file.LastModified.Ticks}\n";
+
+            hash.AppendData(Encoding.UTF8.GetBytes(metadata));
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     private static bool IsAllowedFile(string filePath)
