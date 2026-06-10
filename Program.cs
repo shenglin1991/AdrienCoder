@@ -17,6 +17,23 @@ builder.Services
 var app = builder.Build();
 
 app.MapOpenApi();
+app.MapGet("/openapi-public/v1.json", async (HttpContext context) =>
+{
+    var httpClient = new HttpClient();
+
+    var localUrl = $"{context.Request.Scheme}://{context.Request.Host}/openapi/v1.json";
+    var json = await httpClient.GetStringAsync(localUrl);
+
+    var publicBaseUrl = app.Configuration["PublicBaseUrl"]
+        ?? "https://adrien-sheng-lin.fr/adriencoder";
+
+    json = System.Text.RegularExpressions.Regex.Replace(
+        json,
+        "\"servers\"\\s*:\\s*\\[\\s*\\{\\s*\"url\"\\s*:\\s*\"[^\"]*\"\\s*\\}\\s*\\]",
+        $"\"servers\":[{{\"url\":\"{publicBaseUrl}\"}}]");
+
+    return Results.Content(json, "application/json");
+});
 
 var swaggerPrefix = app.Configuration["Swagger:Prefix"] ?? "";
 
