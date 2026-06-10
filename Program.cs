@@ -39,7 +39,7 @@ var swaggerPrefix = app.Configuration["Swagger:Prefix"] ?? "";
 app.UseSwaggerUI(options =>
 {
     options.RoutePrefix = "swagger";
-    options.SwaggerEndpoint($"{swaggerPrefix}/openapi/v1.json", "AdrienCoder API v1");
+    options.SwaggerEndpoint($"{swaggerPrefix}/openapi-public/v1.json", "AdrienCoder API v1");
 });
 
 app.UseHttpsRedirection();
