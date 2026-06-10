@@ -17,9 +17,13 @@ builder.Services
 var app = builder.Build();
 
 app.MapOpenApi();
+
+var swaggerPrefix = app.Configuration["Swagger:Prefix"] ?? "";
+
 app.UseSwaggerUI(options =>
 {
-    options.SwaggerEndpoint("/openapi/v1.json", "v1");
+    options.RoutePrefix = "swagger";
+    options.SwaggerEndpoint($"{swaggerPrefix}/openapi/v1.json", "AdrienCoder API v1");
 });
 
 app.UseHttpsRedirection();
