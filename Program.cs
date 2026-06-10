@@ -2,7 +2,25 @@ using AdrienCoder.Api.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        var publicBaseUrl = builder.Configuration["PublicBaseUrl"];
+
+        if (!string.IsNullOrWhiteSpace(publicBaseUrl))
+        {
+            document.Servers.Clear();
+
+            document.Servers.Add(new()
+            {
+                Url = publicBaseUrl
+            });
+        }
+
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
