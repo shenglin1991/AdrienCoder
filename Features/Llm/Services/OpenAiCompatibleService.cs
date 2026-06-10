@@ -64,11 +64,13 @@ public class OpenAiCompatibleService : ILLMService
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        return doc.RootElement
+        var content = doc.RootElement
             .GetProperty("choices")[0]
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? string.Empty;
+
+        return LlmResponseSanitizer.RemoveThinking(content);
     }
 
     public async Task<string> AskWithContextAsync(string question, string context)

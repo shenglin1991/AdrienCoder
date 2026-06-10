@@ -60,10 +60,12 @@ public class OllamaService : ILLMService
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        return doc.RootElement
+        var content = doc.RootElement
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? string.Empty;
+
+        return LlmResponseSanitizer.RemoveThinking(content);
     }
 
     public async Task<string> GetModelsAsync()
