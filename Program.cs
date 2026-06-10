@@ -17,12 +17,11 @@ builder.Services
 var app = builder.Build();
 
 app.MapOpenApi();
-app.MapGet("/openapi-public/v1.json", async (HttpContext context) =>
+app.MapGet("/openapi-public/v1.json", async () =>
 {
-    var httpClient = new HttpClient();
+    using var httpClient = new HttpClient();
 
-    var localUrl = $"{context.Request.Scheme}://{context.Request.Host}/openapi/v1.json";
-    var json = await httpClient.GetStringAsync(localUrl);
+    var json = await httpClient.GetStringAsync("http://127.0.0.1:5050/openapi/v1.json");
 
     var publicBaseUrl = app.Configuration["PublicBaseUrl"]
         ?? "https://adrien-sheng-lin.fr/adriencoder";
