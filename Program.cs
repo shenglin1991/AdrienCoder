@@ -17,32 +17,15 @@ builder.Services
 var app = builder.Build();
 
 app.MapOpenApi();
-app.MapGet("/openapi-public/v1.json", async () =>
-{
-    using var httpClient = new HttpClient();
-
-    var json = await httpClient.GetStringAsync("http://127.0.0.1:5050/openapi/v1.json");
-
-    var publicBaseUrl = app.Configuration["PublicBaseUrl"]
-        ?? "https://adrien-sheng-lin.fr/adriencoder";
-
-    json = System.Text.RegularExpressions.Regex.Replace(
-        json,
-        "\"servers\"\\s*:\\s*\\[\\s*\\{\\s*\"url\"\\s*:\\s*\"[^\"]*\"\\s*\\}\\s*\\]",
-        $"\"servers\":[{{\"url\":\"{publicBaseUrl}\"}}]");
-
-    return Results.Content(json, "application/json");
-});
 
 var swaggerPrefix = app.Configuration["Swagger:Prefix"] ?? "";
 
 app.UseSwaggerUI(options =>
 {
     options.RoutePrefix = "swagger";
-    options.SwaggerEndpoint($"{swaggerPrefix}/openapi-public/v1.json", "AdrienCoder API v1");
+    options.SwaggerEndpoint($"{swaggerPrefix}/openapi/v1.json", "AdrienCoder API v1");
 });
 
-app.UseHttpsRedirection();
 app.MapControllers();
 
 app.Run();
