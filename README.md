@@ -108,10 +108,13 @@ dotnet run --project src/AdrienCoder.Client.Cli -- chat "Explique le flux princi
 Le workflow GitHub Actions:
 
 1. compile la solution avec .NET 10;
-2. publie uniquement `AdrienCoder.Server`;
-3. installe l'unite systemd avec `AdrienCoder.Server.dll`;
+2. publie `AdrienCoder.Server` en executable autonome `linux-x64`;
+3. installe l'unite systemd avec l'executable `AdrienCoder.Server`;
 4. redemarre le service;
-5. verifie l'API, Ollama et Qdrant directement sur le VPS.
+5. verifie l'API, Swagger, Ollama et Qdrant directement sur le VPS;
+6. verifie ensuite l'API et Swagger a travers le reverse proxy public.
+
+Le VPS n'a pas besoin d'avoir le runtime .NET 10 installe.
 
 Secrets GitHub requis: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` et
 `VPS_APP_PATH`.

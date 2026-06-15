@@ -25,7 +25,13 @@ jobs:
               run: dotnet build AdrienCoder.sln --configuration Release --no-restore
 
             - name: Publish
-              run: dotnet publish src/AdrienCoder.Server/AdrienCoder.Server.csproj -c Release -o publish
+              run: |
+                  dotnet publish \
+                    src/AdrienCoder.Server/AdrienCoder.Server.csproj \
+                    -c Release \
+                    -r linux-x64 \
+                    --self-contained true \
+                    -o publish
 
             - name: Prepare systemd service
               run: |
@@ -48,13 +54,25 @@ jobs:
 
             - name: Install and restart service
               run: |
-                  ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-                    "sudo install -m 0644 \
-                    ${{ secrets.VPS_APP_PATH }}/adriencoder.service \
-                    /etc/systemd/system/adriencoder.service && \
-                    sudo systemctl daemon-reload && \
-                    sudo systemctl enable adriencoder && \
-                    sudo systemctl restart adriencoder"
+                  ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+                    set -eu
+
+                    chmod +x "${{ secrets.VPS_APP_PATH }}/AdrienCoder.Server"
+                    test -f "${{ secrets.VPS_APP_PATH }}/appsettings.json"
+
+                    sudo install -m 0644 \
+                      "${{ secrets.VPS_APP_PATH }}/adriencoder.service" \
+                      /etc/systemd/system/adriencoder.service
+                    sudo systemctl daemon-reload
+                    sudo systemctl enable adriencoder
+                    sudo systemctl restart adriencoder
+
+                    if ! sudo systemctl is-active --quiet adriencoder; then
+                      sudo systemctl status adriencoder --no-pager || true
+                      sudo journalctl -u adriencoder -n 100 --no-pager
+                      exit 1
+                    fi
+                  '
 
             - name: Verify VPS services
               run: |
@@ -74,7 +92,24 @@ jobs:
                       sleep 1
                     done
 
+                    curl --fail --silent http://127.0.0.1:5000/swagger/index.html >/dev/null
                     curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
                     curl --fail --silent http://127.0.0.1:6333/collections >/dev/null
                     sudo systemctl status adriencoder --no-pager
                   '
+
+            - name: Verify public reverse proxy
+              run: |
+                  curl \
+                    --fail \
+                    --show-error \
+                    --retry 5 \
+                    --retry-delay 2 \
+                    https://adrien-sheng-lin.fr/adriencoder/api/health
+                  curl \
+                    --fail \
+                    --show-error \
+                    --retry 5 \
+                    --retry-delay 2 \
+                    https://adrien-sheng-lin.fr/adriencoder/swagger/index.html \
+                    >/dev/null
