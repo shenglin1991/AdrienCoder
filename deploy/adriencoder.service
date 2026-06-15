@@ -14,7 +14,6 @@ KillSignal=SIGINT
 SyslogIdentifier=adriencoder
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=DOTNET_NOLOGO=true
-EnvironmentFile=-/etc/adriencoder/adriencoder.env
 
 [Install]
 WantedBy=multi-user.target

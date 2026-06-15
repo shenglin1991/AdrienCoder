@@ -16,6 +16,7 @@ public sealed class WorkerSession
         WorkerId = workerId;
         WorkerName = workerName;
         Model = model;
+        ConnectedAt = DateTimeOffset.UtcNow;
         Outgoing = Channel.CreateBounded<ServerMessage>(
             new BoundedChannelOptions(8)
             {
@@ -28,7 +29,12 @@ public sealed class WorkerSession
     public string WorkerId { get; }
     public string WorkerName { get; }
     public string Model { get; }
+    public DateTimeOffset ConnectedAt { get; }
     public Channel<ServerMessage> Outgoing { get; }
+
+    public DateTimeOffset LastHeartbeat =>
+        DateTimeOffset.FromUnixTimeSeconds(
+            Interlocked.Read(ref _lastHeartbeatUnixSeconds));
 
     public bool IsHealthy =>
         DateTimeOffset.UtcNow.ToUnixTimeSeconds()

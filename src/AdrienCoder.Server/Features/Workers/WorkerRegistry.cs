@@ -29,6 +29,20 @@ public sealed class WorkerRegistry
         return _workers.Values.FirstOrDefault(worker => worker.IsHealthy);
     }
 
+    public IReadOnlyList<WorkerConnectionStatus> GetStatuses()
+    {
+        return _workers.Values
+            .OrderBy(worker => worker.WorkerName, StringComparer.OrdinalIgnoreCase)
+            .Select(worker => new WorkerConnectionStatus(
+                worker.WorkerId,
+                worker.WorkerName,
+                worker.Model,
+                worker.IsHealthy,
+                worker.ConnectedAt,
+                worker.LastHeartbeat))
+            .ToList();
+    }
+
     public void Unregister(WorkerSession session)
     {
         _workers.TryRemove(
@@ -38,3 +52,11 @@ public sealed class WorkerRegistry
         session.Outgoing.Writer.TryComplete();
     }
 }
+
+public sealed record WorkerConnectionStatus(
+    string WorkerId,
+    string WorkerName,
+    string Model,
+    bool Healthy,
+    DateTimeOffset ConnectedAt,
+    DateTimeOffset LastHeartbeat);

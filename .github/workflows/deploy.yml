@@ -49,8 +49,7 @@ jobs:
             - name: Install and restart service
               run: |
                   ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-                    "sudo test -r /etc/adriencoder/adriencoder.env && \
-                    sudo install -m 0644 \
+                    "sudo install -m 0644 \
                     ${{ secrets.VPS_APP_PATH }}/adriencoder.service \
                     /etc/systemd/system/adriencoder.service && \
                     sudo systemctl daemon-reload && \

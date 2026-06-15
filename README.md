@@ -80,30 +80,10 @@ $env:Server__BaseUrl = "https://api.example.com"
 $env:Server__ApiKey = "..."
 ```
 
-En production, les valeurs du Server doivent etre placees sur le VPS dans
-`/etc/adriencoder/adriencoder.env`:
-
-```ini
-Authentication__ApiKey=replace-me
-OpenAICompatible__BaseUrl=https://votre-endpoint-vast/v1/
-OpenAICompatible__ApiKey=replace-me
-OpenAICompatible__Model=Qwen/Qwen3-8B-FP8
-Ollama__BaseUrl=http://127.0.0.1:11434/
-Ollama__Model=qwen2.5-coder:7b
-Qdrant__Host=127.0.0.1
-Qdrant__Port=6333
-```
-
-Ce fichier n'est pas versionne. L'unite systemd le charge au demarrage.
-Le workflow refuse de redemarrer le service si ce fichier est absent.
-
-Creation initiale sur le VPS:
-
-```bash
-sudo install -d -m 0750 /etc/adriencoder
-sudo nano /etc/adriencoder/adriencoder.env
-sudo chmod 0600 /etc/adriencoder/adriencoder.env
-```
+En production, `AdrienCoder.Server` utilise directement
+`src/AdrienCoder.Server/appsettings.json`, inclus par `dotnet publish`.
+L'unite systemd force `ASPNETCORE_ENVIRONMENT=Production`, donc
+`appsettings.Development.json` n'est pas charge.
 
 Pour gRPC, le reverse proxy doit accepter HTTP/2 et conserver les connexions
 longues. Un sous-domaine gRPC dedie simplifie generalement la configuration.
@@ -159,11 +139,23 @@ relatifs au depot.
 | `POST` | `/api/vector/search` | Recherche semantique |
 | `GET` | `/api/vector/chunks/qdrant` | Lecture paginee des chunks actifs |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
+| `GET` | `/api/workers` | Workers GPU connectes et dernier heartbeat |
 | `GET` | `/api/health` | Sante HTTP |
 
 La cle est transmise dans l'en-tete `X-Api-Key`. Si
 `Authentication:ApiKey` est vide, l'authentification est desactivee, ce qui
 doit rester limite au developpement local.
+
+Apres deploiement:
+
+```bash
+curl https://api.example.com/api/health
+curl -H "X-Api-Key: votre-cle" https://api.example.com/api/status
+curl -H "X-Api-Key: votre-cle" https://api.example.com/api/workers
+```
+
+Swagger est disponible sous `/swagger`. Le bouton `Authorize` permet de saisir
+la valeur de `X-Api-Key`.
 
 ## Limites du MVP
 
