@@ -50,6 +50,7 @@ if not exist "%SERVER_DLL%" (
   echo Le Server n'est pas compile. Lancez: adriencoder build
   exit /b 1
 )
+set "ASPNETCORE_ENVIRONMENT=Local"
 pushd "%SERVER_DIR%"
 dotnet "%SERVER_DLL%"
 set "EXIT_CODE=%ERRORLEVEL%"

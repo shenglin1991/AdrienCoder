@@ -112,8 +112,9 @@ Le profil `local` cible `http://127.0.0.1:5000`. Le profil `vps` cible
 utilisee par les deux profils lorsqu'une cle API est configuree.
 Les commandes .NET completes restent disponibles:
 
-Le Server local lance par ce script utilise la configuration Production et
-ecoute donc sur `http://127.0.0.1:5000`. Pour le Client CLI sous `cmd`/Cmder:
+Le Server local lance par ce script utilise la configuration `Local`: il
+ecoute sur `http://127.0.0.1:5000` et expose Swagger sans prefixe VPS:
+`http://127.0.0.1:5000/swagger/index.html`. Pour le Client CLI sous `cmd`/Cmder:
 
 ```cmd
 set Server__BaseUrl=http://127.0.0.1:5000
