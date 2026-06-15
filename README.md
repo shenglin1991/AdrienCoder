@@ -1,186 +1,176 @@
 # AdrienCoder
 
-AdrienCoder est une API .NET conçue comme un assistant IA personnel pour le
-développement logiciel. Elle peut répondre à des questions générales ou
-analyser un dépôt de code grâce à un pipeline RAG basé sur Qdrant.
-
-## Fonctionnalités
-
-- Interrogation d'un modèle LLM depuis une API REST.
-- Utilisation prioritaire d'un serveur compatible OpenAI, par exemple Vast.ai.
-- Bascule automatique vers Ollama lorsque le fournisseur principal est
-  indisponible.
-- Scan et découpage d'un dépôt de code en fragments.
-- Génération d'embeddings avec Ollama.
-- Indexation et recherche sémantique dans Qdrant.
-- Ajout automatique du contexte pertinent avant l'interrogation du LLM.
-- Endpoints de santé et de suivi des services.
-- Documentation interactive avec Swagger.
-
-## Architecture
-
-Le projet est organisé par fonctionnalité. Chaque feature contient son
-contrôleur, ses modèles et ses services.
+AdrienCoder est maintenant compose de trois applications deployables
+independamment:
 
 ```text
-Features/
-├── Ask/
-│   ├── Models/
-│   ├── Services/
-│   └── AskController.cs
-├── Indexing/
-│   ├── Models/
-│   ├── Services/
-│   └── IndexController.cs
-├── Llm/
-│   ├── Models/
-│   ├── Services/
-│   └── ModelsController.cs
-├── Monitoring/
-│   ├── Models/
-│   ├── Services/
-│   ├── HealthController.cs
-│   └── StatusController.cs
-└── Vector/
-    ├── Models/
-    ├── Services/
-    └── VectorController.cs
+Client.Cli
+  -> scanne et decoupe le depot local
+  -> POST /api/index vers le VPS
+  -> POST /api/chat
 
-Infrastructure/
-└── DependencyInjection.cs
+Server
+  -> genere les embeddings et stocke les chunks dans Qdrant
+  -> construit le contexte RAG
+  -> envoie le prompt au WorkerGpu
+  -> fallback OpenAI-compatible (Vast), puis Ollama sur le VPS
+
+WorkerGpu
+  -> ouvre une connexion gRPC duplex sortante vers le VPS
+  -> recoit les jobs LLM
+  -> appelle Ollama local
+  -> renvoie les resultats et un heartbeat
 ```
 
-## Routage LLM
+Le PC gamer n'expose aucun port entrant. Le canal gRPC persistant est toujours
+initie par `AdrienCoder.WorkerGpu`.
 
-`LlmRouterService` choisit automatiquement le fournisseur à utiliser :
+## Solution
 
 ```text
-Question
-   │
-   ▼
-LlmRouterService
-   ├── OpenAICompatible disponible → Vast.ai ou serveur compatible OpenAI
-   └── indisponible ou en erreur    → Ollama
+AdrienCoder.sln
+src/
+  AdrienCoder.Server/
+  AdrienCoder.WorkerGpu/
+  AdrienCoder.Client.Cli/
+  AdrienCoder.Shared/
+  AdrienCoder.Contracts/
 ```
 
-Le fournisseur principal et le fournisseur de secours sont configurables dans
-`appsettings.json`.
+- `AdrienCoder.Server`: API ASP.NET Core, endpoint gRPC, orchestration LLM,
+  Qdrant, embeddings et authentification par cle API.
+- `AdrienCoder.WorkerGpu`: Worker Service connecte au VPS et client Ollama
+  local. `ILocalLlmClient` permettra d'ajouter llama.cpp plus tard.
+- `AdrienCoder.Client.Cli`: scan local, exclusions, signature SHA-256,
+  chunking, upload et chat.
+- `AdrienCoder.Contracts`: DTO HTTP et contrat `.proto`.
+- `AdrienCoder.Shared`: options et briques communes.
 
-## Analyse d'un dépôt
+`AdrienCoder.Client.Desktop` reste volontairement reporte.
 
-L'indexation d'un dépôt exécute le pipeline suivant :
+## Prerequis
 
-1. Scan des fichiers pris en charge dans le dépôt.
-2. Exclusion des répertoires générés comme `bin`, `obj`, `.git` et
-   `node_modules`.
-3. Découpage des fichiers en fragments avec chevauchement.
-4. Génération des embeddings.
-5. Indexation des fragments dans Qdrant.
-6. Recherche des fragments les plus proches de la question.
-7. Construction du contexte envoyé au LLM.
-8. Enregistrement de l'index actif dans Qdrant.
-
-Les identifiants des points Qdrant sont déterministes. Une nouvelle indexation
-remplace donc les fragments existants au lieu de créer des doublons.
-
-Avant chaque analyse, AdrienCoder calcule une empreinte légère à partir des
-chemins, tailles et dates de modification des fichiers. Si le dépôt n'a pas
-changé, les contenus ne sont pas relus et les embeddings Qdrant ne sont pas
-recalculés.
+- SDK .NET 10
+- Qdrant accessible depuis le Server
+- un service d'embeddings compatible Ollama accessible depuis le Server
+- Ollama et un modele de chat sur le PC gamer
+- facultatif: Vast ou un autre endpoint compatible OpenAI
+- facultatif: Ollama sur le VPS pour le dernier fallback
 
 ## Configuration
 
-Exemple de configuration :
+Ne versionnez pas de vraies cles. Utilisez les variables d'environnement:
 
-```json
-{
-    "LLM": {
-        "PreferredProvider": "OpenAICompatible",
-        "FallbackProvider": "Ollama",
-        "SystemPrompt": "Tu es AdrienCoder, assistant de développement."
-    },
-    "OpenAICompatible": {
-        "BaseUrl": "http://127.0.0.1:18000/v1/",
-        "ApiKey": "",
-        "Model": "Qwen/Qwen3-8B-FP8"
-    },
-    "Ollama": {
-        "BaseUrl": "http://127.0.0.1:11434/",
-        "Model": "qwen2.5-coder:7b"
-    },
-    "Qdrant": {
-        "Host": "127.0.0.1",
-        "Port": 6333,
-        "CollectionName": "code"
-    },
-    "Embedding": {
-        "BaseUrl": "http://127.0.0.1:11434/",
-        "Model": "nomic-embed-text",
-        "VectorSize": 768
-    }
-}
+```powershell
+# Server VPS
+$env:Authentication__ApiKey = "..."
+$env:Qdrant__Host = "127.0.0.1"
+$env:OpenAICompatible__BaseUrl = "https://..."
+$env:OpenAICompatible__ApiKey = "..."
+
+# WorkerGpu
+$env:Server__BaseUrl = "https://grpc.example.com"
+$env:Server__ApiKey = "..."
+$env:Worker__Id = "gaming-pc"
+$env:Ollama__BaseUrl = "http://127.0.0.1:11434/"
+$env:Ollama__Model = "qwen2.5-coder:7b"
+
+# Client.Cli
+$env:Server__BaseUrl = "https://api.example.com"
+$env:Server__ApiKey = "..."
 ```
 
-Les clés API et adresses privées doivent être fournies avec les variables
-d'environnement ou une configuration locale non versionnée.
+En production, les valeurs du Server doivent etre placees sur le VPS dans
+`/etc/adriencoder/adriencoder.env`:
 
-## Endpoints
+```ini
+Authentication__ApiKey=replace-me
+OpenAICompatible__BaseUrl=https://votre-endpoint-vast/v1/
+OpenAICompatible__ApiKey=replace-me
+OpenAICompatible__Model=Qwen/Qwen3-8B-FP8
+Ollama__BaseUrl=http://127.0.0.1:11434/
+Ollama__Model=qwen2.5-coder:7b
+Qdrant__Host=127.0.0.1
+Qdrant__Port=6333
+```
 
-### Ask
+Ce fichier n'est pas versionne. L'unite systemd le charge au demarrage.
+Le workflow refuse de redemarrer le service si ce fichier est absent.
 
-| Méthode | Route           | Description                                     |
-| ------- | --------------- | ----------------------------------------------- |
-| `POST`  | `/api/ask`      | Pose une question générale au LLM.              |
-| `POST`  | `/api/ask/repo` | Répond avec le contexte de l'index Qdrant actif. |
+Creation initiale sur le VPS:
 
-### Index
+```bash
+sudo install -d -m 0750 /etc/adriencoder
+sudo nano /etc/adriencoder/adriencoder.env
+sudo chmod 0600 /etc/adriencoder/adriencoder.env
+```
 
-| Méthode | Route               | Description                             |
-| ------- | ------------------- | --------------------------------------- |
-| `POST`  | `/api/index/repo`   | Scanne et conserve un dépôt en mémoire. |
-| `GET`   | `/api/index/status` | Affiche l'état de l'index en mémoire.   |
-
-### Vector
-
-| Méthode | Route                | Description                         |
-| ------- | -------------------- | ----------------------------------- |
-| `GET`   | `/api/vector/chunks` | Prévisualise les fragments générés. |
-| `POST`  | `/api/vector/index`  | Indexe les fragments dans Qdrant.   |
-| `POST`  | `/api/vector/search` | Effectue une recherche sémantique.  |
-| `GET`   | `/api/vector/status` | Affiche l'état de Qdrant.           |
-
-### Monitoring
-
-| Méthode | Route         | Description                                     |
-| ------- | ------------- | ----------------------------------------------- |
-| `GET`   | `/api/Health` | Vérifie que l'API répond.                       |
-| `GET`   | `/api/Status` | Affiche Qdrant, le LLM et le fournisseur actif. |
-| `GET`   | `/api/Models` | Retourne les modèles du fournisseur LLM actif.  |
+Pour gRPC, le reverse proxy doit accepter HTTP/2 et conserver les connexions
+longues. Un sous-domaine gRPC dedie simplifie generalement la configuration.
+En developpement, l'API ecoute sur `http://localhost:5148` et gRPC en HTTP/2
+sur `http://localhost:5149`. Les ports VPS internes par defaut sont `5000`
+pour l'API et `5001` pour gRPC.
 
 ## Lancement
 
-Prérequis :
-
-- SDK .NET 10
-- Qdrant
-- Ollama avec le modèle d'embedding configuré
-- Un modèle Ollama local ou un serveur compatible OpenAI
-
 ```powershell
-dotnet restore
-dotnet run
+dotnet build AdrienCoder.sln -c Release
+
+dotnet run --project src/AdrienCoder.Server
+dotnet run --project src/AdrienCoder.WorkerGpu
+
+dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
+dotnet run --project src/AdrienCoder.Client.Cli -- chat "Explique le flux principal"
 ```
 
-En environnement de développement, Swagger est disponible à l'adresse indiquée
-dans la sortie de l'application, généralement sous `/swagger`.
+## Deploiement VPS
 
-## Pistes d'amélioration
+Le workflow GitHub Actions:
 
-- Ajouter une interface web ou desktop.
-- Mettre en cache l'état des fournisseurs LLM.
-- Ne réindexer que les fichiers modifiés.
-- Ajouter l'authentification et la gestion des utilisateurs.
-- Conserver plusieurs dépôts dans des collections Qdrant séparées.
-- Ajouter des tests unitaires et des tests d'intégration.
-- Prendre en charge le streaming des réponses.
-  ssh -N -L 11434:localhost:11434 -L 6333:localhost:6333 ubuntu@ip_serveur-vps
+1. compile la solution avec .NET 10;
+2. publie uniquement `AdrienCoder.Server`;
+3. installe l'unite systemd avec `AdrienCoder.Server.dll`;
+4. redemarre le service;
+5. verifie l'API, Ollama et Qdrant directement sur le VPS.
+
+Secrets GitHub requis: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` et
+`VPS_APP_PATH`.
+
+L'ordre des backends LLM execute par le Server est:
+
+```text
+WorkerGpu
+  -> OpenAICompatible (Vast)
+  -> Ollama VPS sur 127.0.0.1:11434
+```
+
+Le scanner ignore notamment `.git`, `bin`, `obj`, `node_modules`, `dist`,
+`coverage`, `.angular`, `.nx` et `.vs`. Les chemins envoyes au VPS sont
+relatifs au depot.
+
+## API
+
+| Methode | Route | Usage |
+| --- | --- | --- |
+| `POST` | `/api/index` | Upload d'un depot deja decoupe par le Client |
+| `POST` | `/api/chat` | Question RAG sur l'index actif |
+| `POST` | `/api/ask` | Question generale |
+| `POST` | `/api/ask/repo` | Compatibilite avec l'ancien endpoint RAG |
+| `POST` | `/api/vector/search` | Recherche semantique |
+| `GET` | `/api/vector/chunks/qdrant` | Lecture paginee des chunks actifs |
+| `GET` | `/api/status` | Etat Qdrant et LLM |
+| `GET` | `/api/health` | Sante HTTP |
+
+La cle est transmise dans l'en-tete `X-Api-Key`. Si
+`Authentication:ApiKey` est vide, l'authentification est desactivee, ce qui
+doit rester limite au developpement local.
+
+## Limites du MVP
+
+- La file de jobs et le registre des workers sont en memoire. Le Server doit
+  donc tourner en une seule instance.
+- Un Worker traite un job a la fois.
+- L'upload HTTP est monolithique avec une limite de 100 Mio. Un protocole par
+  lots sera preferable pour les tres grands depots.
+- L'index actif Qdrant reste global. La prochaine evolution structurante est
+  un index actif par utilisateur et par depot.

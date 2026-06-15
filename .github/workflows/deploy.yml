@@ -1,4 +1,4 @@
-name: Deploy AdrienCoder API
+name: Deploy AdrienCoder Server
 
 on:
     push:
@@ -16,16 +16,23 @@ jobs:
             - name: Setup .NET
               uses: actions/setup-dotnet@v4
               with:
-                  dotnet-version: '9.0.x'
+                  dotnet-version: '10.0.x'
 
             - name: Restore
-              run: dotnet restore AdrienCoder.slnx
+              run: dotnet restore AdrienCoder.sln
 
             - name: Build
-              run: dotnet build AdrienCoder.slnx --configuration Release --no-restore
+              run: dotnet build AdrienCoder.sln --configuration Release --no-restore
 
             - name: Publish
-              run: dotnet publish AdrienCoder.Api.csproj -c Release -o publish
+              run: dotnet publish src/AdrienCoder.Server/AdrienCoder.Server.csproj -c Release -o publish
+
+            - name: Prepare systemd service
+              run: |
+                  sed \
+                    -e "s|__SERVICE_USER__|${{ secrets.VPS_USER }}|g" \
+                    -e "s|__APP_PATH__|${{ secrets.VPS_APP_PATH }}|g" \
+                    deploy/adriencoder.service > publish/adriencoder.service
 
             - name: Setup SSH
               run: |
@@ -39,6 +46,36 @@ jobs:
                   ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p ${{ secrets.VPS_APP_PATH }}"
                   rsync -avz --delete publish/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_APP_PATH }}/
 
-            - name: Restart service
+            - name: Install and restart service
               run: |
-                  ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "sudo systemctl restart adriencoder && sudo systemctl status adriencoder --no-pager"
+                  ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+                    "sudo test -r /etc/adriencoder/adriencoder.env && \
+                    sudo install -m 0644 \
+                    ${{ secrets.VPS_APP_PATH }}/adriencoder.service \
+                    /etc/systemd/system/adriencoder.service && \
+                    sudo systemctl daemon-reload && \
+                    sudo systemctl enable adriencoder && \
+                    sudo systemctl restart adriencoder"
+
+            - name: Verify VPS services
+              run: |
+                  ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} '
+                    set -eu
+
+                    for attempt in $(seq 1 20); do
+                      if curl --fail --silent http://127.0.0.1:5000/api/health >/dev/null; then
+                        break
+                      fi
+
+                      if [ "$attempt" -eq 20 ]; then
+                        sudo journalctl -u adriencoder -n 100 --no-pager
+                        exit 1
+                      fi
+
+                      sleep 1
+                    done
+
+                    curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null
+                    curl --fail --silent http://127.0.0.1:6333/collections >/dev/null
+                    sudo systemctl status adriencoder --no-pager
+                  '

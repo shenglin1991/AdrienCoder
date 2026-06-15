@@ -1,0 +1,20 @@
+[Unit]
+Description=AdrienCoder Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__APP_PATH__
+ExecStart=/usr/bin/dotnet __APP_PATH__/AdrienCoder.Server.dll
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=adriencoder
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_NOLOGO=true
+EnvironmentFile=-/etc/adriencoder/adriencoder.env
+
+[Install]
+WantedBy=multi-user.target
