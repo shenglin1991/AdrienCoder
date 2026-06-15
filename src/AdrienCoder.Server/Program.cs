@@ -69,7 +69,25 @@ builder.Services
 var app = builder.Build();
 
 app.MapOpenApi();
-app.UseSwagger();
+
+app.UseSwagger(options =>
+{
+    options.PreSerializeFilters.Add((document, request) =>
+    {
+        var publicBaseUrl = app.Configuration["PublicBaseUrl"];
+
+        if (!string.IsNullOrWhiteSpace(publicBaseUrl))
+        {
+            document.Servers =
+            [
+                new OpenApiServer
+                {
+                    Url = publicBaseUrl
+                }
+            ];
+        }
+    });
+});
 
 var swaggerPrefix = app.Configuration["Swagger:Prefix"] ?? "";
 

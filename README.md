@@ -157,6 +157,10 @@ curl -H "X-Api-Key: votre-cle" https://api.example.com/api/workers
 Swagger est disponible sous `/swagger`. Le bouton `Authorize` permet de saisir
 la valeur de `X-Api-Key`.
 
+Derriere le reverse proxy de production, le document Swagger utilise
+`PublicBaseUrl`. Avec la configuration actuelle, les appels `Try it out`
+partent donc vers `https://adrien-sheng-lin.fr/adriencoder/api/...`.
+
 ## Limites du MVP
 
 - La file de jobs et le registre des workers sont en memoire. Le Server doit
