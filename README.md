@@ -99,17 +99,19 @@ Sous Windows avec `cmd` ou Cmder, utilisez le lanceur racine:
 adriencoder build
 adriencoder server
 adriencoder worker
+adriencoder index . AdrienCoder
+adriencoder chat "Explique l'architecture du projet"
 adriencoder local index . AdrienCoder
 adriencoder local chat "Explique l'architecture du projet"
-adriencoder vps chat "Explique l'architecture du projet"
 ```
 
 Le script `adriencoder.cmd` peut etre appele directement depuis la racine du
 depot. Lancez `adriencoder build` apres chaque modification du code; les autres
 commandes executent ensuite directement les DLL Release, sans recompilation.
-Le profil `local` cible `http://127.0.0.1:5000`. Le profil `vps` cible
-`https://adrien-sheng-lin.fr/adriencoder/`. La variable `Server__ApiKey` reste
-utilisee par les deux profils lorsqu'une cle API est configuree.
+Sans profil, le CLI cible `https://adrien-sheng-lin.fr/adriencoder/`. Le profil
+`local` force `http://127.0.0.1:5000`. Le profil `vps` reste disponible comme
+alias explicite. La variable `Server__ApiKey` reste utilisee dans tous les cas
+lorsqu'une cle API est configuree.
 Les commandes .NET completes restent disponibles:
 
 Le Server local lance par ce script utilise la configuration `Local`: il

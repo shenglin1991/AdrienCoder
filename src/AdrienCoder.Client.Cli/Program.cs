@@ -207,8 +207,9 @@ internal static class CliApplication
             AdrienCoder CLI
 
             Profils:
+              par defaut                          Server public sous /adriencoder/.
               local                               Server local sur le port 5000.
-              vps                                 Server public sous /adriencoder/.
+              vps                                 Alias explicite du Server public.
 
             Commandes:
               index <repoPath> [repositoryName]  Indexe un dépôt local.

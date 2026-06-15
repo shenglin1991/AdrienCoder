@@ -18,8 +18,8 @@ if /I "%COMMAND%"=="local" goto local
 if /I "%COMMAND%"=="vps" goto vps
 
 :route
-if /I "%COMMAND%"=="index" goto client
-if /I "%COMMAND%"=="chat" goto client
+if /I "%COMMAND%"=="index" goto default_client
+if /I "%COMMAND%"=="chat" goto default_client
 if /I "%COMMAND%"=="server" goto server
 if /I "%COMMAND%"=="worker" goto worker
 if /I "%COMMAND%"=="build" goto build
@@ -32,6 +32,10 @@ goto help_error
 goto client
 
 :vps
+goto client
+
+:default_client
+set "Server__BaseUrl=https://adrien-sheng-lin.fr/adriencoder/"
 goto client
 
 :client
@@ -81,12 +85,12 @@ echo   adriencoder worker
 echo   adriencoder index ^<repoPath^> [repositoryName]
 echo   adriencoder chat ^<question...^>
 echo   adriencoder local ^<index^|chat^> ...
-echo   adriencoder vps ^<index^|chat^> ...
 echo.
 echo Exemples:
+echo   adriencoder index . AdrienCoder
+echo   adriencoder chat "Explique l'architecture"
 echo   adriencoder local index . AdrienCoder
 echo   adriencoder local chat "Explique l'architecture"
-echo   adriencoder vps chat "Explique l'architecture"
 exit /b 0
 
 :help_error
