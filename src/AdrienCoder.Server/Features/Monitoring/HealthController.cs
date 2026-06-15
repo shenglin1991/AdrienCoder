@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace AdrienCoder.Server.Features.Monitoring;
 
 [ApiController]
-[Route("api/[controller]")]
-public class HealthController : ControllerBase
+[Route("api/health")]
+public sealed class HealthController : ControllerBase
 {
     [HttpGet]
     public IActionResult Get()

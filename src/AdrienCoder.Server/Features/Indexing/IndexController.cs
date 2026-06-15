@@ -16,7 +16,6 @@ public sealed class IndexController : ControllerBase
     }
 
     [HttpPost]
-    [HttpPost("repo")]
     [RequestSizeLimit(100 * 1024 * 1024)]
     public async Task<ActionResult<IndexRepositoryResponse>> IndexRepository(
         [FromBody] IndexRepositoryRequest request)
@@ -40,5 +39,37 @@ public sealed class IndexController : ControllerBase
         return activeIndex is null
             ? NotFound(new { message = "No active repository index." })
             : Ok(activeIndex);
+    }
+
+    [HttpGet("chunks")]
+    public async Task<IActionResult> GetChunks(
+        [FromQuery] int limit = 50,
+        [FromQuery] string? offset = null)
+    {
+        if (limit is < 1 or > 200)
+        {
+            return BadRequest("Limit must be between 1 and 200.");
+        }
+
+        try
+        {
+            var page = await _repositoryIndexingService.GetStoredChunksAsync(
+                limit,
+                offset);
+
+            return page is null
+                ? NotFound(new { message = "No active repository index." })
+                : Ok(page);
+        }
+        catch (HttpRequestException exception)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new
+                {
+                    message = "Qdrant rejected the chunk page request.",
+                    detail = exception.Message
+                });
+        }
     }
 }

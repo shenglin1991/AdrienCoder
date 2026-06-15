@@ -93,6 +93,32 @@ pour l'API et `5001` pour gRPC.
 
 ## Lancement
 
+Sous Windows avec `cmd` ou Cmder, utilisez le lanceur racine:
+
+```cmd
+adriencoder build
+adriencoder server
+adriencoder worker
+adriencoder local index . AdrienCoder
+adriencoder local chat "Explique l'architecture du projet"
+adriencoder vps chat "Explique l'architecture du projet"
+```
+
+Le script `adriencoder.cmd` peut etre appele directement depuis la racine du
+depot. Lancez `adriencoder build` apres chaque modification du code; les autres
+commandes executent ensuite directement les DLL Release, sans recompilation.
+Le profil `local` cible `http://127.0.0.1:5000`. Le profil `vps` cible
+`https://adrien-sheng-lin.fr/adriencoder/`. La variable `Server__ApiKey` reste
+utilisee par les deux profils lorsqu'une cle API est configuree.
+Les commandes .NET completes restent disponibles:
+
+Le Server local lance par ce script utilise la configuration Production et
+ecoute donc sur `http://127.0.0.1:5000`. Pour le Client CLI sous `cmd`/Cmder:
+
+```cmd
+set Server__BaseUrl=http://127.0.0.1:5000
+```
+
 ```powershell
 dotnet build AdrienCoder.sln -c Release
 
@@ -133,12 +159,11 @@ relatifs au depot.
 | Methode | Route | Usage |
 | --- | --- | --- |
 | `POST` | `/api/index` | Upload d'un depot deja decoupe par le Client |
+| `GET` | `/api/index/status` | Index Qdrant actif |
+| `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
 | `POST` | `/api/chat` | Question RAG sur l'index actif |
-| `POST` | `/api/ask` | Question generale |
-| `POST` | `/api/ask/repo` | Compatibilite avec l'ancien endpoint RAG |
-| `POST` | `/api/vector/search` | Recherche semantique |
-| `GET` | `/api/vector/chunks/qdrant` | Lecture paginee des chunks actifs |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
+| `GET` | `/api/status/models` | Modeles du backend LLM actif |
 | `GET` | `/api/workers` | Workers GPU connectes et dernier heartbeat |
 | `GET` | `/api/health` | Sante HTTP |
 

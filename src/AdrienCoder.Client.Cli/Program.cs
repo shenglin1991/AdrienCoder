@@ -42,6 +42,22 @@ internal static class CliApplication
 
     public static async Task<int> RunAsync(string[] args)
     {
+        string? baseUrlOverride = null;
+        if (args.Length > 0)
+        {
+            baseUrlOverride = args[0].ToLowerInvariant() switch
+            {
+                "local" => "http://127.0.0.1:5000/",
+                "vps" => "https://adrien-sheng-lin.fr/adriencoder/",
+                _ => null
+            };
+
+            if (baseUrlOverride is not null)
+            {
+                args = args[1..];
+            }
+        }
+
         if (args.Length == 0 || IsHelp(args[0]))
         {
             PrintHelp();
@@ -68,7 +84,7 @@ internal static class CliApplication
 
         try
         {
-            var settings = await ServerSettings.LoadAsync();
+            var settings = await ServerSettings.LoadAsync(baseUrlOverride);
             using var client = CreateHttpClient(settings);
 
             return command switch
@@ -114,7 +130,7 @@ internal static class CliApplication
 
         var response = await PostAsync<IndexRepositoryRequest, IndexRepositoryResponse>(
             client,
-            "/api/index",
+            "api/index",
             request);
 
         Console.WriteLine(
@@ -133,7 +149,7 @@ internal static class CliApplication
 
         var response = await PostAsync<ChatRequest, ChatResponse>(
             client,
-            "/api/chat",
+            "api/chat",
             new ChatRequest(question));
 
         Console.WriteLine(response.Answer);
@@ -162,10 +178,15 @@ internal static class CliApplication
     {
         var client = new HttpClient
         {
-            BaseAddress = settings.BaseUrl
+            BaseAddress = settings.BaseUrl,
+            Timeout = TimeSpan.FromMinutes(30)
         };
 
-        client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
+        if (!string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
+        }
+
         return client;
     }
 
@@ -185,6 +206,10 @@ internal static class CliApplication
             """
             AdrienCoder CLI
 
+            Profils:
+              local                               Server local sur le port 5000.
+              vps                                 Server public sous /adriencoder/.
+
             Commandes:
               index <repoPath> [repositoryName]  Indexe un dépôt local.
               chat <question...>                 Pose une question au serveur.
@@ -197,7 +222,7 @@ internal static class CliApplication
 
     private sealed record ServerSettings(Uri BaseUrl, string ApiKey)
     {
-        public static async Task<ServerSettings> LoadAsync()
+        public static async Task<ServerSettings> LoadAsync(string? baseUrlOverride = null)
         {
             string? baseUrl = null;
             string? apiKey = null;
@@ -214,7 +239,9 @@ internal static class CliApplication
                 }
             }
 
-            baseUrl = GetEnvironmentValue("Server__BaseUrl", "Server:BaseUrl") ?? baseUrl;
+            baseUrl = baseUrlOverride
+                ?? GetEnvironmentValue("Server__BaseUrl", "Server:BaseUrl")
+                ?? baseUrl;
             apiKey = GetEnvironmentValue("Server__ApiKey", "Server:ApiKey") ?? apiKey;
 
             if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
@@ -224,13 +251,12 @@ internal static class CliApplication
                     "Server:BaseUrl doit être une URL HTTP(S) absolue.");
             }
 
-            if (string.IsNullOrWhiteSpace(apiKey))
+            var normalizedBaseUrl = new UriBuilder(uri)
             {
-                throw new InvalidOperationException(
-                    "Server:ApiKey doit être défini dans appsettings.json ou Server__ApiKey.");
-            }
+                Path = $"{uri.AbsolutePath.TrimEnd('/')}/"
+            }.Uri;
 
-            return new ServerSettings(uri, apiKey);
+            return new ServerSettings(normalizedBaseUrl, apiKey ?? string.Empty);
         }
 
         private static string? FindSettingsPath()

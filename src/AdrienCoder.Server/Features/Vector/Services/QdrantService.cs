@@ -195,13 +195,12 @@ public class QdrantService
             return null;
         }
 
-        var request = new
+        var request = new Dictionary<string, object?>
         {
-            offset,
-            limit,
-            with_payload = true,
-            with_vector = false,
-            filter = new
+            ["limit"] = limit,
+            ["with_payload"] = true,
+            ["with_vector"] = false,
+            ["filter"] = new
             {
                 must = new object[]
                 {
@@ -230,11 +229,25 @@ public class QdrantService
             }
         };
 
+        if (!string.IsNullOrWhiteSpace(offset))
+        {
+            request["offset"] = offset;
+        }
+
         var response = await _httpClient.PostAsJsonAsync(
             $"collections/{_options.CollectionName}/points/scroll",
             request);
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+
+            throw new HttpRequestException(
+                $"Qdrant scroll failed with status "
+                + $"{(int)response.StatusCode}: {error}",
+                null,
+                response.StatusCode);
+        }
 
         using var document = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync());
