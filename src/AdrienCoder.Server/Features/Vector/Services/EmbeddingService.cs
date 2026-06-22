@@ -47,7 +47,7 @@ public class EmbeddingService
         };
 
         var response = await _httpClient.PostAsJsonAsync("api/embeddings", payload);
-        response.EnsureSuccessStatusCode();
+        await EnsureEmbeddingSuccessAsync(response);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
@@ -67,7 +67,7 @@ public class EmbeddingService
         };
 
         var response = await _httpClient.PostAsJsonAsync("embeddings", payload);
-        response.EnsureSuccessStatusCode();
+        await EnsureEmbeddingSuccessAsync(response);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
@@ -77,5 +77,25 @@ public class EmbeddingService
             .EnumerateArray()
             .Select(x => x.GetSingle())
             .ToArray();
+    }
+
+    private async Task EnsureEmbeddingSuccessAsync(HttpResponseMessage response)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync();
+        var detail = string.IsNullOrWhiteSpace(body)
+            ? response.ReasonPhrase
+            : body.Trim();
+
+        throw new HttpRequestException(
+            $"Embedding endpoint returned {(int)response.StatusCode} "
+            + $"for format '{_options.ApiFormat}' at "
+            + $"'{_httpClient.BaseAddress}': {detail}",
+            null,
+            response.StatusCode);
     }
 }

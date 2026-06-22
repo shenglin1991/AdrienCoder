@@ -57,6 +57,11 @@ if not exist "%SERVER_DLL%" (
   exit /b 1
 )
 set "ASPNETCORE_ENVIRONMENT=Local"
+if not defined Embedding__ApiFormat set "Embedding__ApiFormat=Ollama"
+if not defined Embedding__BaseUrl set "Embedding__BaseUrl=http://localhost:11434"
+if not defined Embedding__ApiKey set "Embedding__ApiKey="
+if not defined Embedding__Model set "Embedding__Model=nomic-embed-text"
+if not defined Embedding__VectorSize set "Embedding__VectorSize=768"
 pushd "%SERVER_DIR%"
 dotnet "%SERVER_DLL%"
 set "EXIT_CODE=%ERRORLEVEL%"

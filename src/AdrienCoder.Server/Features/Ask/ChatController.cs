@@ -35,5 +35,15 @@ public sealed class ChatController : ControllerBase
         {
             return BadRequest(exception.Message);
         }
+        catch (HttpRequestException exception)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new
+                {
+                    message = "The embedding or LLM backend rejected the request.",
+                    detail = exception.Message
+                });
+        }
     }
 }
