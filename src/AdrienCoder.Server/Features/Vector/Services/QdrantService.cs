@@ -290,31 +290,42 @@ public class QdrantService
     {
         await CreateCollectionIfNotExistsAsync();
 
-        var points = new List<object>();
+        var maxParallelism = Math.Max(1, _embeddingOptions.MaxParallelism);
+        var batchSize = Math.Max(1, _embeddingOptions.UpsertBatchSize);
+        var chunkPoints = new object[chunks.Count];
 
-        foreach (var chunk in chunks)
-        {
-            var vector = await _embeddingService.EmbedAsync(chunk.Content);
-
-            points.Add(new
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, chunks.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = maxParallelism },
+            async (index, _) =>
             {
-                id = CreatePointId($"{repositoryPath}::{chunk.Id}"),
-                vector,
-                payload = new
+                var chunk = chunks[index];
+                var vector = await _embeddingService.EmbedAsync(chunk.Content);
+
+                chunkPoints[index] = new
                 {
-                    pointType = "chunk",
-                    repositoryPath,
-                    repositorySignature,
-                    chunk.Id,
-                    chunk.FilePath,
-                    chunk.Content,
-                    chunk.ChunkIndex
-                }
+                    id = CreatePointId($"{repositoryPath}::{chunk.Id}"),
+                    vector,
+                    payload = new
+                    {
+                        pointType = "chunk",
+                        repositoryPath,
+                        repositorySignature,
+                        chunk.Id,
+                        chunk.FilePath,
+                        chunk.Content,
+                        chunk.ChunkIndex
+                    }
+                };
             });
+
+        foreach (var batch in chunkPoints.Chunk(batchSize))
+        {
+            await UpsertPointsAsync(batch);
         }
 
         // The marker persists the repository signature across API restarts.
-        points.Add(new
+        var repositoryStatePoint = new
         {
             id = CreatePointId($"repository-state::{repositoryPath}"),
             vector = new float[_embeddingOptions.VectorSize],
@@ -325,22 +336,25 @@ public class QdrantService
                 repositorySignature,
                 chunkCount = chunks.Count
             }
-        });
-
-        // Ask/repo uses this stable marker to locate the latest completed index.
-        points.Add(CreateActiveIndexPoint(
-            repositoryPath,
-            repositorySignature,
-            chunks.Count));
-
-        var body = new
-        {
-            points
         };
 
+        // Ask/repo uses this stable marker to locate the latest completed index.
+        var activeIndexPoint = CreateActiveIndexPoint(
+            repositoryPath,
+            repositorySignature,
+            chunks.Count);
+
+        await UpsertPointsAsync(new[] { repositoryStatePoint, activeIndexPoint });
+    }
+
+    private async Task UpsertPointsAsync(IReadOnlyList<object> points)
+    {
         var response = await _httpClient.PutAsJsonAsync(
             $"collections/{_options.CollectionName}/points?wait=true",
-            body);
+            new
+            {
+                points
+            });
 
         response.EnsureSuccessStatusCode();
     }

@@ -65,6 +65,8 @@ Ne versionnez pas de vraies cles. Utilisez les variables d'environnement:
 # Server VPS
 $env:Authentication__ApiKey = "..."
 $env:Qdrant__Host = "127.0.0.1"
+$env:Embedding__MaxParallelism = "2"
+$env:Embedding__UpsertBatchSize = "64"
 $env:OpenAICompatible__BaseUrl = "https://..."
 $env:OpenAICompatible__ApiKey = "..."
 
@@ -85,6 +87,11 @@ En production, `AdrienCoder.Server` utilise directement
 L'unite systemd force `ASPNETCORE_ENVIRONMENT=Production`, donc
 `appsettings.Development.json` n'est pas charge.
 
+L'indexation calcule les embeddings en parallele selon
+`Embedding:MaxParallelism` et envoie les points Qdrant par lots selon
+`Embedding:UpsertBatchSize`. Sur une machine GPU dediee, vous pouvez essayer
+`Embedding__MaxParallelism=4`; si Ollama ralentit ou sature, revenez a `2`.
+
 Pour gRPC, le reverse proxy doit accepter HTTP/2 et conserver les connexions
 longues. Un sous-domaine gRPC dedie simplifie generalement la configuration.
 En developpement, l'API ecoute sur `http://localhost:5148` et gRPC en HTTP/2
@@ -101,6 +108,8 @@ adriencoder server
 adriencoder worker
 adriencoder index . AdrienCoder
 adriencoder chat "Explique l'architecture du projet"
+adriencoder status
+adriencoder models
 adriencoder local index . AdrienCoder
 adriencoder local chat "Explique l'architecture du projet"
 ```
@@ -130,6 +139,8 @@ dotnet run --project src/AdrienCoder.WorkerGpu
 
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
 dotnet run --project src/AdrienCoder.Client.Cli -- chat "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- status
+dotnet run --project src/AdrienCoder.Client.Cli -- models
 ```
 
 ## Deploiement VPS
@@ -161,6 +172,7 @@ relatifs au depot.
 
 | Methode | Route | Usage |
 | --- | --- | --- |
+| `POST` | `/api/index/check` | Verification legere avant upload complet |
 | `POST` | `/api/index` | Upload d'un depot deja decoupe par le Client |
 | `GET` | `/api/index/status` | Index Qdrant actif |
 | `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
@@ -194,7 +206,8 @@ partent donc vers `https://adrien-sheng-lin.fr/adriencoder/api/...`.
 - La file de jobs et le registre des workers sont en memoire. Le Server doit
   donc tourner en une seule instance.
 - Un Worker traite un job a la fois.
-- L'upload HTTP est monolithique avec une limite de 100 Mio. Un protocole par
-  lots sera preferable pour les tres grands depots.
+- L'upload HTTP des chunks reste monolithique avec une limite de 100 Mio quand
+  le depot a change. Un protocole par lots sera preferable pour les tres grands
+  depots.
 - L'index actif Qdrant reste global. La prochaine evolution structurante est
   un index actif par utilisateur et par depot.

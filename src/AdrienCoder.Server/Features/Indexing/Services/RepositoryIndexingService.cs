@@ -87,6 +87,50 @@ public sealed class RepositoryIndexingService
         return new IndexRepositoryResponse(indexedFiles, chunks.Count, true);
     }
 
+    public async Task<IndexRepositoryResponse> CheckIndexAsync(
+        IndexRepositoryCheckRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.RepositoryName))
+        {
+            throw new InvalidOperationException("RepositoryName is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.RepositorySignature))
+        {
+            throw new InvalidOperationException(
+                "RepositorySignature is required.");
+        }
+
+        if (request.Chunks <= 0)
+        {
+            throw new InvalidOperationException(
+                "At least one code chunk is required.");
+        }
+
+        var existingChunkCount = await _qdrantService
+            .GetIndexedChunkCountAsync(
+                request.RepositoryName,
+                request.RepositorySignature);
+
+        if (existingChunkCount == request.Chunks)
+        {
+            await _qdrantService.SetActiveIndexAsync(
+                request.RepositoryName,
+                request.RepositorySignature,
+                existingChunkCount.Value);
+
+            return new IndexRepositoryResponse(
+                request.IndexedFiles,
+                existingChunkCount.Value,
+                false);
+        }
+
+        return new IndexRepositoryResponse(
+            request.IndexedFiles,
+            request.Chunks,
+            true);
+    }
+
     public async Task<List<VectorSearchResult>> SearchAsync(
         string question,
         int limit)

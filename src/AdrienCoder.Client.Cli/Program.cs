@@ -65,7 +65,7 @@ internal static class CliApplication
         }
 
         var command = args[0].ToLowerInvariant();
-        if (command is not ("index" or "chat"))
+        if (command is not ("index" or "chat" or "status" or "models"))
         {
             return UnknownCommand(args[0]);
         }
@@ -82,6 +82,12 @@ internal static class CliApplication
             return 1;
         }
 
+        if (command is "status" or "models" && args.Length != 1)
+        {
+            Console.Error.WriteLine($"Usage: adriencoder {command}");
+            return 1;
+        }
+
         try
         {
             var settings = await ServerSettings.LoadAsync(baseUrlOverride);
@@ -91,6 +97,8 @@ internal static class CliApplication
             {
                 "index" => await RunIndexAsync(client, args),
                 "chat" => await RunChatAsync(client, args),
+                "status" => await RunStatusAsync(client),
+                "models" => await RunModelsAsync(client),
                 _ => throw new InvalidOperationException("Commande non prise en charge.")
             };
         }
@@ -125,6 +133,25 @@ internal static class CliApplication
 
         var files = await RepositoryScanner.ReadFilesAsync(repositoryPath);
         var signature = RepositoryScanner.ComputeSignature(files);
+        var chunkCount = RepositoryScanner.CountChunks(files);
+        var indexedFiles = files.Count;
+        var check = await PostAsync<IndexRepositoryCheckRequest, IndexRepositoryResponse>(
+            client,
+            "api/index/check",
+            new IndexRepositoryCheckRequest(
+                repositoryName,
+                signature,
+                indexedFiles,
+                chunkCount));
+
+        if (!check.Updated)
+        {
+            Console.WriteLine(
+                $"Indexation terminÃ©e: {check.IndexedFiles} fichiers, " +
+                $"{check.Chunks} chunks, mise Ã  jour: {check.Updated}.");
+            return 0;
+        }
+
         var chunks = RepositoryScanner.CreateChunks(files);
         var request = new IndexRepositoryRequest(repositoryName, signature, chunks);
 
@@ -156,6 +183,40 @@ internal static class CliApplication
         return 0;
     }
 
+    private static async Task<int> RunStatusAsync(HttpClient client)
+    {
+        var response = await GetAsync<CliStatusResponse>(client, "api/status");
+
+        Console.WriteLine($"API:      {response.Api}");
+        Console.WriteLine($"Qdrant:   {response.Qdrant}");
+        Console.WriteLine($"LLM:      {response.Llm}");
+        Console.WriteLine($"Provider: {response.ActiveProvider}");
+        Console.WriteLine($"Model:    {response.Model ?? "(none)"}");
+        Console.WriteLine($"Time:     {response.Time:O}");
+        return 0;
+    }
+
+    private static async Task<int> RunModelsAsync(HttpClient client)
+    {
+        var body = await GetStringAsync(client, "api/status/models");
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            Console.WriteLine(JsonSerializer.Serialize(
+                document.RootElement,
+                new JsonSerializerOptions(JsonOptions)
+                {
+                    WriteIndented = true
+                }));
+        }
+        catch (JsonException)
+        {
+            Console.WriteLine(body);
+        }
+
+        return 0;
+    }
+
     private static async Task<TResponse> PostAsync<TRequest, TResponse>(
         HttpClient client,
         string path,
@@ -172,6 +233,37 @@ internal static class CliApplication
 
         return await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions)
             ?? throw new InvalidOperationException("Le serveur a renvoyé une réponse vide.");
+    }
+
+    private static async Task<TResponse> GetAsync<TResponse>(
+        HttpClient client,
+        string path)
+    {
+        using var response = await client.GetAsync(path);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body.Trim();
+            throw new HttpRequestException(
+                $"Le serveur a rÃ©pondu {(int)response.StatusCode} ({detail}).");
+        }
+
+        return await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions)
+            ?? throw new InvalidOperationException("Le serveur a renvoyÃ© une rÃ©ponse vide.");
+    }
+
+    private static async Task<string> GetStringAsync(HttpClient client, string path)
+    {
+        using var response = await client.GetAsync(path);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body.Trim();
+            throw new HttpRequestException(
+                $"Le serveur a rÃ©pondu {(int)response.StatusCode} ({detail}).");
+        }
+
+        return await response.Content.ReadAsStringAsync();
     }
 
     private static HttpClient CreateHttpClient(ServerSettings settings)
@@ -214,12 +306,22 @@ internal static class CliApplication
             Commandes:
               index <repoPath> [repositoryName]  Indexe un dépôt local.
               chat <question...>                 Pose une question au serveur.
+              status                              Affiche l'etat API, Qdrant et LLM.
+              models                              Affiche les modeles du backend LLM actif.
 
             Configuration:
               appsettings.json: Server:BaseUrl, Server:ApiKey
               environnement:   Server__BaseUrl, Server__ApiKey
             """);
     }
+
+    private sealed record CliStatusResponse(
+        string Api,
+        string Qdrant,
+        string Llm,
+        string ActiveProvider,
+        string? Model,
+        DateTimeOffset Time);
 
     private sealed record ServerSettings(Uri BaseUrl, string ApiKey)
     {
@@ -353,6 +455,18 @@ internal static class CliApplication
             return chunks;
         }
 
+        public static int CountChunks(IReadOnlyList<RepositoryFile> files)
+        {
+            var chunkCount = 0;
+
+            foreach (var file in files)
+            {
+                chunkCount += CountFileChunks(file.Content);
+            }
+
+            return chunkCount;
+        }
+
         private static IEnumerable<string> EnumerateSourceFiles(string rootPath)
         {
             var directories = new Stack<string>();
@@ -399,6 +513,17 @@ internal static class CliApplication
                     yield break;
                 }
             }
+        }
+
+        private static int CountFileChunks(string content)
+        {
+            if (content.Length == 0)
+            {
+                return 1;
+            }
+
+            var step = ChunkSize - ChunkOverlap;
+            return ((content.Length - 1) / step) + 1;
         }
 
         private static string CreateChunkId(string relativePath, int chunkIndex)

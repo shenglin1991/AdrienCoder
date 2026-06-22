@@ -20,6 +20,8 @@ if /I "%COMMAND%"=="vps" goto vps
 :route
 if /I "%COMMAND%"=="index" goto default_client
 if /I "%COMMAND%"=="chat" goto default_client
+if /I "%COMMAND%"=="status" goto default_client
+if /I "%COMMAND%"=="models" goto default_client
 if /I "%COMMAND%"=="server" goto server
 if /I "%COMMAND%"=="worker" goto worker
 if /I "%COMMAND%"=="build" goto build
@@ -84,11 +86,14 @@ echo   adriencoder server
 echo   adriencoder worker
 echo   adriencoder index ^<repoPath^> [repositoryName]
 echo   adriencoder chat ^<question...^>
+echo   adriencoder status
+echo   adriencoder models
 echo   adriencoder local ^<index^|chat^> ...
 echo.
 echo Exemples:
 echo   adriencoder index . AdrienCoder
 echo   adriencoder chat "Explique l'architecture"
+echo   adriencoder status
 echo   adriencoder local index . AdrienCoder
 echo   adriencoder local chat "Explique l'architecture"
 exit /b 0

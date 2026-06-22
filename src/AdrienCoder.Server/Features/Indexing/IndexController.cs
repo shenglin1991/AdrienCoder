@@ -30,6 +30,20 @@ public sealed class IndexController : ControllerBase
         }
     }
 
+    [HttpPost("check")]
+    public async Task<ActionResult<IndexRepositoryResponse>> CheckRepository(
+        [FromBody] IndexRepositoryCheckRequest request)
+    {
+        try
+        {
+            return Ok(await _repositoryIndexingService.CheckIndexAsync(request));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+    }
+
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus()
     {
