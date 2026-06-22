@@ -1,5 +1,6 @@
 using AdrienCoder.Contracts.Chat;
 using AdrienCoder.Server.Features.Ask.Services;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -178,6 +179,12 @@ public sealed class ChatController : ControllerBase
     private async Task WriteStreamAsync(IAsyncEnumerable<string> stream)
     {
         Response.ContentType = "application/x-ndjson; charset=utf-8";
+        Response.Headers.CacheControl = "no-cache, no-transform";
+        Response.Headers.Connection = "keep-alive";
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        await Response.StartAsync(HttpContext.RequestAborted);
 
         await foreach (var delta in stream.WithCancellation(
             HttpContext.RequestAborted))

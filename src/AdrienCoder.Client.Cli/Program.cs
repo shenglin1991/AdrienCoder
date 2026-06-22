@@ -13,30 +13,25 @@ internal static class CliApplication
     private const int ChunkSize = 1200;
     private const int ChunkOverlap = 200;
     private const int IndexUploadBatchSize = 128;
+    private const long MaxIndexedFileBytes = 1024 * 1024;
 
     private static readonly HashSet<string> IgnoredDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git",
+        ".github",
+        ".idea",
+        ".vscode",
         "bin",
         "obj",
         "node_modules",
         "dist",
+        "build",
         "coverage",
         ".angular",
         ".nx",
-        ".vs"
-    };
-
-    private static readonly HashSet<string> IncludedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".cs",
-        ".ts",
-        ".html",
-        ".scss",
-        ".json",
-        ".md",
-        ".yml",
-        ".yaml"
+        ".vs",
+        "packages",
+        "artifacts"
     };
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -783,12 +778,54 @@ internal static class CliApplication
 
                 foreach (var file in Directory.EnumerateFiles(directory))
                 {
-                    if (IncludedExtensions.Contains(Path.GetExtension(file)))
+                    if (ShouldIndexFile(file))
                     {
                         yield return file;
                     }
                 }
             }
+        }
+
+        private static bool ShouldIndexFile(string filePath)
+        {
+            var info = new FileInfo(filePath);
+
+            if (info.Attributes.HasFlag(FileAttributes.ReparsePoint)
+                || info.Length > MaxIndexedFileBytes)
+            {
+                return false;
+            }
+
+            Span<byte> buffer = stackalloc byte[4096];
+            using var stream = File.OpenRead(filePath);
+            var bytesRead = stream.Read(buffer);
+
+            if (bytesRead == 0)
+            {
+                return true;
+            }
+
+            var zeroBytes = 0;
+            var controlBytes = 0;
+
+            for (var index = 0; index < bytesRead; index++)
+            {
+                var value = buffer[index];
+
+                if (value == 0)
+                {
+                    zeroBytes++;
+                    continue;
+                }
+
+                if (value < 32
+                    && value is not (9 or 10 or 12 or 13 or 27))
+                {
+                    controlBytes++;
+                }
+            }
+
+            return zeroBytes == 0 && controlBytes <= bytesRead / 20;
         }
 
         private static IEnumerable<string> SplitContent(string content)

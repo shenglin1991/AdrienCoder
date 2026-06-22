@@ -190,8 +190,11 @@ WorkerGpu
   -> Ollama VPS sur 127.0.0.1:11434
 ```
 
-Le scanner ignore notamment `.git`, `bin`, `obj`, `node_modules`, `dist`,
-`coverage`, `.angular`, `.nx` et `.vs`. Les chemins envoyes au VPS sont
+Le scanner parcourt recursivement le repertoire donne et indexe les fichiers
+qui ressemblent a du texte, quelle que soit leur extension. Les binaires, les
+fichiers de plus de 1 Mio et les dossiers d'artefacts comme `.git`, `bin`,
+`obj`, `node_modules`, `dist`, `build`, `coverage`, `.angular`, `.nx`, `.vs`,
+`.idea`, `.vscode`, `packages` et `artifacts` sont ignores. Les chemins envoyes au VPS sont
 relatifs au depot.
 
 ## API
