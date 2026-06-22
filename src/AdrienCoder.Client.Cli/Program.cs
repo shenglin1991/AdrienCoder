@@ -78,7 +78,8 @@ internal static class CliApplication
 
         if (command == "chat" && args.Length < 2)
         {
-            Console.Error.WriteLine("Usage: adriencoder chat <question...>");
+            Console.Error.WriteLine(
+                "Usage: adriencoder chat [--repo <repositoryName>] <question...>");
             return 1;
         }
 
@@ -168,7 +169,9 @@ internal static class CliApplication
 
     private static async Task<int> RunChatAsync(HttpClient client, string[] args)
     {
-        var question = string.Join(' ', args.Skip(1)).Trim();
+        var repositoryName = ExtractRepositoryName(args, out var questionArgs);
+        var question = string.Join(' ', questionArgs).Trim();
+
         if (question.Length == 0)
         {
             throw new ArgumentException("La question ne peut pas être vide.");
@@ -177,7 +180,7 @@ internal static class CliApplication
         var response = await PostAsync<ChatRequest, ChatResponse>(
             client,
             "api/chat",
-            new ChatRequest(question));
+            new ChatRequest(question, repositoryName));
 
         Console.WriteLine(response.Answer);
         return 0;
@@ -305,7 +308,8 @@ internal static class CliApplication
 
             Commandes:
               index <repoPath> [repositoryName]  Indexe un dépôt local.
-              chat <question...>                 Pose une question au serveur.
+              chat [--repo <repositoryName>] <question...>
+                                                  Pose une question au serveur.
               status                              Affiche l'etat API, Qdrant et LLM.
               models                              Affiche les modeles du backend LLM actif.
 
@@ -313,6 +317,38 @@ internal static class CliApplication
               appsettings.json: Server:BaseUrl, Server:ApiKey
               environnement:   Server__BaseUrl, Server__ApiKey
             """);
+    }
+
+    private static string? ExtractRepositoryName(
+        string[] args,
+        out IReadOnlyList<string> questionArgs)
+    {
+        string? repositoryName = null;
+        var remainingArgs = new List<string>();
+
+        for (var index = 1; index < args.Length; index++)
+        {
+            var argument = args[index];
+
+            if (argument is "--repo" or "-r")
+            {
+                if (index + 1 >= args.Length
+                    || string.IsNullOrWhiteSpace(args[index + 1]))
+                {
+                    throw new ArgumentException(
+                        "--repo requires a repository name.");
+                }
+
+                repositoryName = args[index + 1].Trim();
+                index++;
+                continue;
+            }
+
+            remainingArgs.Add(argument);
+        }
+
+        questionArgs = remainingArgs;
+        return repositoryName;
     }
 
     private sealed record CliStatusResponse(

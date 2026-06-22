@@ -26,7 +26,9 @@ public sealed class ChatController : ControllerBase
 
         try
         {
-            var answer = await _askService.AskRepositoryAsync(request.Question);
+            var answer = await _askService.AskRepositoryAsync(
+                request.Question,
+                request.RepositoryName);
             return Ok(new ChatResponse(answer));
         }
         catch (InvalidOperationException exception)

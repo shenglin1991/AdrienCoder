@@ -168,17 +168,27 @@ public sealed class RepositoryIndexingService
 
     public async Task<string> BuildContextFromExistingIndexAsync(
         string question,
+        string? repositoryName = null,
         int limit = 5)
     {
-        var activeIndex = await _qdrantService.GetActiveIndexAsync()
-            ?? throw new InvalidOperationException(
-                "No vector index found. Upload a repository first.");
+        var index = string.IsNullOrWhiteSpace(repositoryName)
+            ? await _qdrantService.GetActiveIndexAsync()
+            : await _qdrantService.GetRepositoryIndexAsync(repositoryName);
+
+        if (index is null)
+        {
+            var message = string.IsNullOrWhiteSpace(repositoryName)
+                ? "No vector index found. Upload a repository first."
+                : $"No vector index found for repository '{repositoryName}'.";
+
+            throw new InvalidOperationException(message);
+        }
 
         var chunks = await _qdrantService.SearchAsync(
             question,
             limit,
-            activeIndex.RepositoryPath,
-            activeIndex.RepositorySignature);
+            index.RepositoryPath,
+            index.RepositorySignature);
 
         if (chunks.Count == 0)
         {

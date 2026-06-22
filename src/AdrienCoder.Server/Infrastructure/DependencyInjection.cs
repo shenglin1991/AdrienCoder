@@ -6,6 +6,7 @@ using AdrienCoder.Server.Features.Monitoring.Services;
 using AdrienCoder.Server.Features.Vector.Models;
 using AdrienCoder.Server.Features.Vector.Services;
 using AdrienCoder.Server.Features.Workers;
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
 
 namespace AdrienCoder.Server.Infrastructure;
@@ -87,6 +88,12 @@ public static class DependencyInjection
 
             client.BaseAddress = new Uri(options.BaseUrl);
             client.Timeout = TimeSpan.FromMinutes(5);
+
+            if (!string.IsNullOrWhiteSpace(options.ApiKey))
+            {
+                client.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", options.ApiKey);
+            }
         });
 
         return services;

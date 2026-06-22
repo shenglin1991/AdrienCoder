@@ -133,6 +133,20 @@ public class QdrantService
         await CreateCollectionIfNotExistsAsync();
 
         var markerId = CreatePointId(ActiveIndexMarker);
+        return await GetIndexStateAsync(markerId);
+    }
+
+    public async Task<VectorIndexState?> GetRepositoryIndexAsync(
+        string repositoryPath)
+    {
+        await CreateCollectionIfNotExistsAsync();
+
+        var markerId = CreatePointId($"repository-state::{repositoryPath}");
+        return await GetIndexStateAsync(markerId);
+    }
+
+    private async Task<VectorIndexState?> GetIndexStateAsync(string markerId)
+    {
         var payload = await GetPointPayloadAsync(markerId);
 
         if (payload is null)
@@ -292,6 +306,15 @@ public class QdrantService
 
         var maxParallelism = Math.Max(1, _embeddingOptions.MaxParallelism);
         var batchSize = Math.Max(1, _embeddingOptions.UpsertBatchSize);
+        var chunkPointIds = chunks
+            .Select(chunk => CreatePointId($"{repositoryPath}::{chunk.Id}"))
+            .ToArray();
+        var contentHashes = chunks
+            .Select(chunk => ComputeContentHash(chunk.Content))
+            .ToArray();
+        var reusableVectors = await GetReusableChunkVectorsAsync(
+            chunkPointIds,
+            batchSize);
         var chunkPoints = new object[chunks.Count];
 
         await Parallel.ForEachAsync(
@@ -300,11 +323,18 @@ public class QdrantService
             async (index, _) =>
             {
                 var chunk = chunks[index];
-                var vector = await _embeddingService.EmbedAsync(chunk.Content);
+                var pointId = chunkPointIds[index];
+                var contentHash = contentHashes[index];
+                var vector = reusableVectors.TryGetValue(
+                        pointId,
+                        out var reusableVector)
+                    && reusableVector.Matches(contentHash, chunk.Content)
+                        ? reusableVector.Vector
+                        : await _embeddingService.EmbedAsync(chunk.Content);
 
                 chunkPoints[index] = new
                 {
-                    id = CreatePointId($"{repositoryPath}::{chunk.Id}"),
+                    id = pointId,
                     vector,
                     payload = new
                     {
@@ -314,6 +344,7 @@ public class QdrantService
                         chunk.Id,
                         chunk.FilePath,
                         chunk.Content,
+                        contentHash,
                         chunk.ChunkIndex
                     }
                 };
@@ -357,6 +388,59 @@ public class QdrantService
             });
 
         response.EnsureSuccessStatusCode();
+    }
+
+    private async Task<Dictionary<string, StoredChunkVector>> GetReusableChunkVectorsAsync(
+        IReadOnlyList<string> pointIds,
+        int batchSize)
+    {
+        var vectors = new Dictionary<string, StoredChunkVector>(
+            StringComparer.Ordinal);
+
+        foreach (var batch in pointIds.Chunk(batchSize))
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"collections/{_options.CollectionName}/points",
+                new
+                {
+                    ids = batch,
+                    with_payload = true,
+                    with_vector = true
+                });
+
+            response.EnsureSuccessStatusCode();
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+
+            foreach (var point in document.RootElement
+                .GetProperty("result")
+                .EnumerateArray())
+            {
+                if (!point.TryGetProperty("payload", out var payload)
+                    || !point.TryGetProperty("vector", out var vectorElement)
+                    || vectorElement.ValueKind is not JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                var id = point.GetProperty("id").ToString();
+                var vector = vectorElement
+                    .EnumerateArray()
+                    .Select(value => value.GetSingle())
+                    .ToArray();
+
+                if (vector.Length == _embeddingOptions.VectorSize)
+                {
+                    vectors[id] = new StoredChunkVector(
+                        GetString(payload, "contentHash", "ContentHash"),
+                        GetString(payload, "Content", "content"),
+                        vector);
+                }
+            }
+        }
+
+        return vectors;
     }
 
     private object CreateActiveIndexPoint(
@@ -410,6 +494,12 @@ public class QdrantService
         // Stable IDs make repeated repository indexing replace points instead of duplicating them.
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(chunkId));
         return new Guid(hash.AsSpan(0, 16)).ToString();
+    }
+
+    private static string ComputeContentHash(string content)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(content));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     public async Task<List<VectorSearchResult>> SearchAsync(
@@ -507,5 +597,24 @@ public class QdrantService
         }
 
         return 0;
+    }
+
+    private sealed record StoredChunkVector(
+        string ContentHash,
+        string Content,
+        float[] Vector)
+    {
+        public bool Matches(string contentHash, string content)
+        {
+            if (!string.IsNullOrWhiteSpace(ContentHash))
+            {
+                return string.Equals(
+                    ContentHash,
+                    contentHash,
+                    StringComparison.Ordinal);
+            }
+
+            return string.Equals(Content, content, StringComparison.Ordinal);
+        }
     }
 }

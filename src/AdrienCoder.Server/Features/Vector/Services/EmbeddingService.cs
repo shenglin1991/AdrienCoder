@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 namespace AdrienCoder.Server.Features.Vector.Services;
 
 /// <summary>
-/// Client for the Ollama embeddings endpoint used by Qdrant indexing and search.
+/// Client for the embeddings endpoint used by Qdrant indexing and search.
 /// </summary>
 public class EmbeddingService
 {
@@ -21,6 +21,25 @@ public class EmbeddingService
 
     public async Task<float[]> EmbedAsync(string text)
     {
+        var vector = _options.ApiFormat.Equals(
+            "OpenAICompatible",
+            StringComparison.OrdinalIgnoreCase)
+            ? await EmbedOpenAiCompatibleAsync(text)
+            : await EmbedOllamaAsync(text);
+
+        if (vector.Length != _options.VectorSize)
+        {
+            throw new InvalidOperationException(
+                $"Embedding model '{_options.Model}' returned "
+                + $"{vector.Length} dimensions, but Embedding:VectorSize "
+                + $"is configured to {_options.VectorSize}.");
+        }
+
+        return vector;
+    }
+
+    private async Task<float[]> EmbedOllamaAsync(string text)
+    {
         var payload = new
         {
             model = _options.Model,
@@ -33,6 +52,27 @@ public class EmbeddingService
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         return doc.RootElement
+            .GetProperty("embedding")
+            .EnumerateArray()
+            .Select(x => x.GetSingle())
+            .ToArray();
+    }
+
+    private async Task<float[]> EmbedOpenAiCompatibleAsync(string text)
+    {
+        var payload = new
+        {
+            model = _options.Model,
+            input = text
+        };
+
+        var response = await _httpClient.PostAsJsonAsync("embeddings", payload);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        return doc.RootElement
+            .GetProperty("data")[0]
             .GetProperty("embedding")
             .EnumerateArray()
             .Select(x => x.GetSingle())

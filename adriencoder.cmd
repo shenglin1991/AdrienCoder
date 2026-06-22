@@ -85,17 +85,17 @@ echo   adriencoder build
 echo   adriencoder server
 echo   adriencoder worker
 echo   adriencoder index ^<repoPath^> [repositoryName]
-echo   adriencoder chat ^<question...^>
+echo   adriencoder chat [--repo repositoryName] ^<question...^>
 echo   adriencoder status
 echo   adriencoder models
 echo   adriencoder local ^<index^|chat^> ...
 echo.
 echo Exemples:
 echo   adriencoder index . AdrienCoder
-echo   adriencoder chat "Explique l'architecture"
+echo   adriencoder chat --repo AdrienCoder "Explique l'architecture"
 echo   adriencoder status
 echo   adriencoder local index . AdrienCoder
-echo   adriencoder local chat "Explique l'architecture"
+echo   adriencoder local chat --repo AdrienCoder "Explique l'architecture"
 exit /b 0
 
 :help_error

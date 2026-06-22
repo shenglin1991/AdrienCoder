@@ -65,6 +65,11 @@ Ne versionnez pas de vraies cles. Utilisez les variables d'environnement:
 # Server VPS
 $env:Authentication__ApiKey = "..."
 $env:Qdrant__Host = "127.0.0.1"
+$env:Embedding__ApiFormat = "OpenAICompatible"
+$env:Embedding__BaseUrl = "http://127.0.0.1:18000/v1/"
+$env:Embedding__ApiKey = ""
+$env:Embedding__Model = "nomic-embed-text"
+$env:Embedding__VectorSize = "768"
 $env:Embedding__MaxParallelism = "2"
 $env:Embedding__UpsertBatchSize = "64"
 $env:OpenAICompatible__BaseUrl = "https://..."
@@ -91,6 +96,16 @@ L'indexation calcule les embeddings en parallele selon
 `Embedding:MaxParallelism` et envoie les points Qdrant par lots selon
 `Embedding:UpsertBatchSize`. Sur une machine GPU dediee, vous pouvez essayer
 `Embedding__MaxParallelism=4`; si Ollama ralentit ou sature, revenez a `2`.
+En production, les embeddings peuvent viser Vast via un endpoint
+OpenAI-compatible (`Embedding:ApiFormat=OpenAICompatible`,
+`Embedding:BaseUrl=http://127.0.0.1:18000/v1/`). Si le pod Vast expose Ollama
+plutot qu'un endpoint `/v1`, utilisez `Embedding:ApiFormat=Ollama` avec la
+base URL Ollama correspondante.
+Avant l'upload complet, le Client envoie une verification legere basee sur la
+signature du depot: si rien n'a change, le Server reactive simplement l'index
+existant. Lors d'une reindexation partielle, les chunks deja presents avec le
+meme `contentHash` reutilisent leur vecteur Qdrant au lieu de recalculer
+l'embedding.
 
 Pour gRPC, le reverse proxy doit accepter HTTP/2 et conserver les connexions
 longues. Un sous-domaine gRPC dedie simplifie generalement la configuration.
@@ -107,11 +122,11 @@ adriencoder build
 adriencoder server
 adriencoder worker
 adriencoder index . AdrienCoder
-adriencoder chat "Explique l'architecture du projet"
+adriencoder chat --repo AdrienCoder "Explique l'architecture du projet"
 adriencoder status
 adriencoder models
 adriencoder local index . AdrienCoder
-adriencoder local chat "Explique l'architecture du projet"
+adriencoder local chat --repo AdrienCoder "Explique l'architecture du projet"
 ```
 
 Le script `adriencoder.cmd` peut etre appele directement depuis la racine du
@@ -138,7 +153,7 @@ dotnet run --project src/AdrienCoder.Server
 dotnet run --project src/AdrienCoder.WorkerGpu
 
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
-dotnet run --project src/AdrienCoder.Client.Cli -- chat "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo "Explique le flux principal"
 dotnet run --project src/AdrienCoder.Client.Cli -- status
 dotnet run --project src/AdrienCoder.Client.Cli -- models
 ```
@@ -176,7 +191,7 @@ relatifs au depot.
 | `POST` | `/api/index` | Upload d'un depot deja decoupe par le Client |
 | `GET` | `/api/index/status` | Index Qdrant actif |
 | `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
-| `POST` | `/api/chat` | Question RAG sur l'index actif |
+| `POST` | `/api/chat` | Question RAG sur l'index actif ou le `repositoryName` demande |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
 | `GET` | `/api/status/models` | Modeles du backend LLM actif |
 | `GET` | `/api/workers` | Workers GPU connectes et dernier heartbeat |
@@ -209,5 +224,5 @@ partent donc vers `https://adrien-sheng-lin.fr/adriencoder/api/...`.
 - L'upload HTTP des chunks reste monolithique avec une limite de 100 Mio quand
   le depot a change. Un protocole par lots sera preferable pour les tres grands
   depots.
-- L'index actif Qdrant reste global. La prochaine evolution structurante est
-  un index actif par utilisateur et par depot.
+- Sans `repositoryName`, le chat utilise encore l'index actif global. Avec
+  `repositoryName`, il cible l'index nomme.

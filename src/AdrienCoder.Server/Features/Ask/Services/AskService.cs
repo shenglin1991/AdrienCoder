@@ -24,10 +24,12 @@ public class AskService
         return _llmService.AskAsync(question);
     }
 
-    public async Task<string> AskRepositoryAsync(string question)
+    public async Task<string> AskRepositoryAsync(
+        string question,
+        string? repositoryName = null)
     {
         var context = await _repositoryIndexingService
-            .BuildContextFromExistingIndexAsync(question);
+            .BuildContextFromExistingIndexAsync(question, repositoryName);
 
         return await _llmService.AskWithContextAsync(question, context);
     }
