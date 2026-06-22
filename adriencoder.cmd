@@ -21,6 +21,7 @@ if /I "%COMMAND%"=="vps" goto vps
 if /I "%COMMAND%"=="index" goto default_client
 if /I "%COMMAND%"=="chat" goto default_client
 if /I "%COMMAND%"=="ask" goto default_client
+if /I "%COMMAND%"=="eval" goto default_client
 if /I "%COMMAND%"=="status" goto default_client
 if /I "%COMMAND%"=="models" goto default_client
 if /I "%COMMAND%"=="server" goto server
@@ -91,18 +92,21 @@ echo   adriencoder build
 echo   adriencoder server
 echo   adriencoder worker
 echo   adriencoder index ^<repoPath^> [repositoryName] [--force]
-echo   adriencoder chat [--repo repositoryName] [--no-context] [--debug-context] ^<question...^>
+echo   adriencoder chat [--repo repositoryName] [--no-context] [--debug-context] [--save-training path] ^<question...^>
 echo   adriencoder ask ^<question...^>
+echo   adriencoder eval [--repo repositoryName] [--no-context] [--out path]
 echo   adriencoder status
 echo   adriencoder models
-echo   adriencoder local ^<index^|chat^> ...
+echo   adriencoder local ^<index^|chat^|ask^|eval^|status^|models^> ...
 echo.
 echo Exemples:
 echo   adriencoder index . AdrienCoder
 echo   adriencoder chat --repo AdrienCoder "Explique l'architecture"
 echo   adriencoder chat --repo AdrienCoder --debug-context "Explique l'architecture"
+echo   adriencoder chat --repo AdrienCoder --save-training training-data\manual.jsonl "Explique l'architecture"
 echo   adriencoder index . AdrienCoder --force
 echo   adriencoder ask "Reponds juste ok"
+echo   adriencoder eval --repo AdrienCoder
 echo   adriencoder status
 echo   adriencoder local index . AdrienCoder
 echo   adriencoder local chat --repo AdrienCoder "Explique l'architecture"

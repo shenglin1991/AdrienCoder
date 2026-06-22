@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -61,7 +62,7 @@ internal static class CliApplication
         }
 
         var command = args[0].ToLowerInvariant();
-        if (command is not ("index" or "chat" or "ask" or "status" or "models"))
+        if (command is not ("index" or "chat" or "ask" or "status" or "models" or "eval"))
         {
             return UnknownCommand(args[0]);
         }
@@ -103,6 +104,7 @@ internal static class CliApplication
                 "ask" => await RunAskAsync(client, args),
                 "status" => await RunStatusAsync(client),
                 "models" => await RunModelsAsync(client),
+                "eval" => await RunEvalAsync(client, args),
                 _ => throw new InvalidOperationException("Commande non prise en charge.")
             };
         }
@@ -203,35 +205,55 @@ internal static class CliApplication
 
     private static async Task<int> RunChatAsync(HttpClient client, string[] args)
     {
-        var repositoryName = ExtractRepositoryName(
-            args,
-            out var questionArgs,
-            out var noContext,
-            out var debugContext);
-        var question = string.Join(' ', questionArgs).Trim();
+        var chatArgs = ParseChatArgs(args);
+        var question = string.Join(' ', chatArgs.QuestionArgs).Trim();
 
         if (question.Length == 0)
         {
             throw new ArgumentException("La question ne peut pas être vide.");
         }
 
-        if (debugContext && noContext)
+        if (chatArgs.DebugContext && chatArgs.NoContext)
         {
             throw new ArgumentException(
                 "--debug-context cannot be used with --no-context.");
         }
 
-        if (debugContext)
+        ChatContextDebugResponse? debugContext = null;
+        if (chatArgs.DebugContext
+            || (!chatArgs.NoContext && chatArgs.TrainingOutputPath is not null))
         {
-            await PrintDebugContextAsync(
+            debugContext = await GetDebugContextAsync(
                 client,
-                new ChatRequest(question, repositoryName));
+                new ChatRequest(question, chatArgs.RepositoryName));
         }
 
-        await PostStreamAsync(
+        if (chatArgs.DebugContext && debugContext is not null)
+        {
+            PrintDebugContext(debugContext);
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        var answer = await PostStreamAsync(
             client,
-            noContext ? "api/chat/ask/stream" : "api/chat/stream",
-            new ChatRequest(question, repositoryName));
+            chatArgs.NoContext ? "api/chat/ask/stream" : "api/chat/stream",
+            new ChatRequest(question, chatArgs.RepositoryName));
+        stopwatch.Stop();
+
+        if (chatArgs.TrainingOutputPath is not null)
+        {
+            var status = await TryGetStatusAsync(client);
+            await TrainingDataWriter.AppendAsync(
+                chatArgs.TrainingOutputPath,
+                TrainingDataRecord.FromChat(
+                    question,
+                    answer,
+                    chatArgs.RepositoryName,
+                    debugContext,
+                    status,
+                    stopwatch.Elapsed));
+            Console.WriteLine($"Training sample saved: {chatArgs.TrainingOutputPath}");
+        }
 
         return 0;
     }
@@ -294,15 +316,71 @@ internal static class CliApplication
         return 0;
     }
 
-    private static async Task PrintDebugContextAsync(
+    private static async Task<int> RunEvalAsync(HttpClient client, string[] args)
+    {
+        var evalArgs = ParseEvalArgs(args);
+        var questions = EvaluationQuestions.Default;
+        var outputPath = evalArgs.OutputPath ?? CreateDefaultTrainingPath("eval");
+
+        Console.WriteLine($"Eval questions: {questions.Length}");
+        Console.WriteLine($"Output: {outputPath}");
+
+        for (var index = 0; index < questions.Length; index++)
+        {
+            var question = questions[index];
+            Console.WriteLine();
+            Console.WriteLine($"[{index + 1}/{questions.Length}] {question}");
+
+            ChatContextDebugResponse? debugContext = null;
+            if (!evalArgs.NoContext)
+            {
+                debugContext = await GetDebugContextAsync(
+                    client,
+                    new ChatRequest(question, evalArgs.RepositoryName));
+            }
+
+            var beforeStatus = await TryGetStatusAsync(client);
+            var stopwatch = Stopwatch.StartNew();
+            var answer = await PostStreamAsync(
+                client,
+                evalArgs.NoContext ? "api/chat/ask/stream" : "api/chat/stream",
+                new ChatRequest(question, evalArgs.RepositoryName));
+            stopwatch.Stop();
+            var afterStatus = await TryGetStatusAsync(client);
+
+            await TrainingDataWriter.AppendAsync(
+                outputPath,
+                TrainingDataRecord.FromEval(
+                    question,
+                    answer,
+                    evalArgs.RepositoryName,
+                    debugContext,
+                    beforeStatus,
+                    afterStatus,
+                    stopwatch.Elapsed));
+
+            Console.WriteLine(
+                $"Latency: {stopwatch.Elapsed.TotalSeconds:0.0}s | Provider: {afterStatus?.ActiveProvider ?? "(unknown)"}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Eval saved: {outputPath}");
+        Console.WriteLine("Corrige les champs expected_output avant un fine-tuning.");
+        return 0;
+    }
+
+    private static async Task<ChatContextDebugResponse> GetDebugContextAsync(
         HttpClient client,
         ChatRequest request)
     {
-        var response = await PostAsync<ChatRequest, ChatContextDebugResponse>(
+        return await PostAsync<ChatRequest, ChatContextDebugResponse>(
             client,
             "api/chat/context",
             request);
+    }
 
+    private static void PrintDebugContext(ChatContextDebugResponse response)
+    {
         Console.WriteLine("=== RAG context ===");
         Console.WriteLine(
             $"Repository: {response.RepositoryName} ({FormatSignature(response.RepositorySignature)})");
@@ -354,7 +432,19 @@ internal static class CliApplication
             ?? throw new InvalidOperationException("Le serveur a renvoyÃ© une rÃ©ponse vide.");
     }
 
-    private static async Task PostStreamAsync<TRequest>(
+    private static async Task<CliStatusResponse?> TryGetStatusAsync(HttpClient client)
+    {
+        try
+        {
+            return await GetAsync<CliStatusResponse>(client, "api/status");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<string> PostStreamAsync<TRequest>(
         HttpClient client,
         string path,
         TRequest request)
@@ -377,6 +467,7 @@ internal static class CliApplication
         await using var stream = await response.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
         var wroteAnyContent = false;
+        var answer = new StringBuilder();
 
         while (await reader.ReadLineAsync() is { } line)
         {
@@ -401,6 +492,7 @@ internal static class CliApplication
             if (!string.IsNullOrEmpty(chunk.Delta))
             {
                 Console.Write(chunk.Delta);
+                answer.Append(chunk.Delta);
                 wroteAnyContent = true;
             }
 
@@ -414,6 +506,8 @@ internal static class CliApplication
         {
             Console.WriteLine();
         }
+
+        return answer.ToString();
     }
 
     private static async Task<string> GetStringAsync(HttpClient client, string path)
@@ -470,9 +564,11 @@ internal static class CliApplication
             Commandes:
               index <repoPath> [repositoryName] [--force]
                                                   Indexe un depot local.
-              chat [--repo <repositoryName>] [--no-context] [--debug-context] <question...>
+              chat [--repo <repositoryName>] [--no-context] [--debug-context] [--save-training <path>] <question...>
                                                   Pose une question avec contexte RAG.
               ask <question...>                  Pose une question sans contexte RAG.
+              eval [--repo <repositoryName>] [--no-context] [--out <path>]
+                                                  Lance une evaluation et ecrit un JSONL.
               status                              Affiche l'etat API, Qdrant et LLM.
               models                              Affiche les modeles du backend LLM actif.
 
@@ -482,15 +578,12 @@ internal static class CliApplication
             """);
     }
 
-    private static string? ExtractRepositoryName(
-        string[] args,
-        out IReadOnlyList<string> questionArgs,
-        out bool noContext,
-        out bool debugContext)
+    private static ChatCommandArgs ParseChatArgs(string[] args)
     {
         string? repositoryName = null;
-        noContext = false;
-        debugContext = false;
+        var noContext = false;
+        var debugContext = false;
+        string? trainingOutputPath = null;
         var remainingArgs = new List<string>();
 
         for (var index = 1; index < args.Length; index++)
@@ -523,11 +616,78 @@ internal static class CliApplication
                 continue;
             }
 
+            if (argument == "--save-training")
+            {
+                if (index + 1 >= args.Length
+                    || string.IsNullOrWhiteSpace(args[index + 1]))
+                {
+                    throw new ArgumentException(
+                        "--save-training requires an output JSONL path.");
+                }
+
+                trainingOutputPath = args[index + 1].Trim();
+                index++;
+                continue;
+            }
+
             remainingArgs.Add(argument);
         }
 
-        questionArgs = remainingArgs;
-        return repositoryName;
+        return new ChatCommandArgs(
+            repositoryName,
+            noContext,
+            debugContext,
+            trainingOutputPath,
+            remainingArgs);
+    }
+
+    private static EvalCommandArgs ParseEvalArgs(string[] args)
+    {
+        string? repositoryName = null;
+        string? outputPath = null;
+        var noContext = false;
+
+        for (var index = 1; index < args.Length; index++)
+        {
+            var argument = args[index];
+
+            if (argument is "--repo" or "-r")
+            {
+                if (index + 1 >= args.Length
+                    || string.IsNullOrWhiteSpace(args[index + 1]))
+                {
+                    throw new ArgumentException(
+                        "--repo requires a repository name.");
+                }
+
+                repositoryName = args[index + 1].Trim();
+                index++;
+                continue;
+            }
+
+            if (argument == "--out")
+            {
+                if (index + 1 >= args.Length
+                    || string.IsNullOrWhiteSpace(args[index + 1]))
+                {
+                    throw new ArgumentException("--out requires a JSONL path.");
+                }
+
+                outputPath = args[index + 1].Trim();
+                index++;
+                continue;
+            }
+
+            if (argument == "--no-context")
+            {
+                noContext = true;
+                continue;
+            }
+
+            throw new ArgumentException($"Unknown eval option: {argument}");
+        }
+
+        return new EvalCommandArgs(repositoryName, outputPath, noContext);
     }
 
     private static IndexCommandArgs ParseIndexArgs(string[] args)
@@ -587,6 +747,182 @@ internal static class CliApplication
         return normalized.Length <= maxLength
             ? normalized
             : normalized[..maxLength] + "...";
+    }
+
+    private static string CreateDefaultTrainingPath(string prefix)
+    {
+        var stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+        return Path.Combine("training-data", $"{prefix}-{stamp}.jsonl");
+    }
+
+    private sealed record ChatCommandArgs(
+        string? RepositoryName,
+        bool NoContext,
+        bool DebugContext,
+        string? TrainingOutputPath,
+        IReadOnlyList<string> QuestionArgs);
+
+    private sealed record EvalCommandArgs(
+        string? RepositoryName,
+        string? OutputPath,
+        bool NoContext);
+
+    private sealed record TrainingDataRecord(
+        string Type,
+        string Instruction,
+        string Input,
+        string Output,
+        string ExpectedOutput,
+        string? RepositoryName,
+        string? RepositorySignature,
+        IReadOnlyList<TrainingContextChunk> ContextChunks,
+        TrainingStatusSnapshot? StatusBefore,
+        TrainingStatusSnapshot? StatusAfter,
+        double LatencyMs,
+        DateTimeOffset CreatedAt)
+    {
+        public static TrainingDataRecord FromChat(
+            string question,
+            string answer,
+            string? repositoryName,
+            ChatContextDebugResponse? context,
+            CliStatusResponse? status,
+            TimeSpan latency)
+        {
+            return new TrainingDataRecord(
+                "chat",
+                question,
+                BuildTrainingInput(context),
+                answer,
+                string.Empty,
+                repositoryName ?? context?.RepositoryName,
+                context?.RepositorySignature,
+                ToTrainingChunks(context),
+                null,
+                TrainingStatusSnapshot.FromStatus(status),
+                latency.TotalMilliseconds,
+                DateTimeOffset.UtcNow);
+        }
+
+        public static TrainingDataRecord FromEval(
+            string question,
+            string answer,
+            string? repositoryName,
+            ChatContextDebugResponse? context,
+            CliStatusResponse? beforeStatus,
+            CliStatusResponse? afterStatus,
+            TimeSpan latency)
+        {
+            return new TrainingDataRecord(
+                "eval",
+                question,
+                BuildTrainingInput(context),
+                answer,
+                string.Empty,
+                repositoryName ?? context?.RepositoryName,
+                context?.RepositorySignature,
+                ToTrainingChunks(context),
+                TrainingStatusSnapshot.FromStatus(beforeStatus),
+                TrainingStatusSnapshot.FromStatus(afterStatus),
+                latency.TotalMilliseconds,
+                DateTimeOffset.UtcNow);
+        }
+
+        private static string BuildTrainingInput(ChatContextDebugResponse? context)
+        {
+            if (context is null || context.Chunks.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var builder = new StringBuilder();
+            builder.AppendLine($"Repository: {context.RepositoryName}");
+            builder.AppendLine($"Signature: {context.RepositorySignature}");
+            builder.AppendLine();
+
+            foreach (var chunk in context.Chunks)
+            {
+                builder.AppendLine($"--- {chunk.FilePath}#{chunk.ChunkIndex} score={chunk.Score:0.000} ---");
+                builder.AppendLine(chunk.Content.Trim());
+                builder.AppendLine();
+            }
+
+            return builder.ToString().Trim();
+        }
+
+        private static IReadOnlyList<TrainingContextChunk> ToTrainingChunks(
+            ChatContextDebugResponse? context)
+        {
+            return context?.Chunks
+                .Select(chunk => new TrainingContextChunk(
+                    chunk.FilePath,
+                    chunk.ChunkIndex,
+                    chunk.Score,
+                    chunk.Content))
+                .ToArray()
+                ?? Array.Empty<TrainingContextChunk>();
+        }
+    }
+
+    private sealed record TrainingContextChunk(
+        string FilePath,
+        int ChunkIndex,
+        float Score,
+        string Content);
+
+    private sealed record TrainingStatusSnapshot(
+        string? Provider,
+        string? Model,
+        string? ActiveRepository,
+        int? ActiveRepositoryChunks,
+        int WorkersConnected,
+        int WorkersHealthy)
+    {
+        public static TrainingStatusSnapshot? FromStatus(CliStatusResponse? status)
+        {
+            return status is null
+                ? null
+                : new TrainingStatusSnapshot(
+                    status.ActiveProvider,
+                    status.Model,
+                    status.ActiveRepository,
+                    status.ActiveRepositoryChunks,
+                    status.WorkersConnected,
+                    status.WorkersHealthy);
+        }
+    }
+
+    private static class TrainingDataWriter
+    {
+        public static async Task AppendAsync(string outputPath, TrainingDataRecord record)
+        {
+            var fullPath = Path.GetFullPath(outputPath);
+            var directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var line = JsonSerializer.Serialize(record, JsonOptions);
+            await File.AppendAllTextAsync(fullPath, line + Environment.NewLine);
+        }
+    }
+
+    private static class EvaluationQuestions
+    {
+        public static readonly string[] Default =
+        [
+            "Explique l'architecture AdrienCoder en 5 points.",
+            "Decris le flux d'indexation depuis le CLI jusqu'a Qdrant.",
+            "Comment le serveur choisit-il entre WorkerGpu, Vast et Ollama ?",
+            "Comment fonctionne le streaming entre le serveur et le CLI ?",
+            "Quels fichiers et dossiers sont ignores pendant l'indexation ?",
+            "Comment diagnostiquer un contexte RAG qui ne contient pas les bons fichiers ?",
+            "Que se passe-t-il si Vast est indisponible pendant un chat ?",
+            "Quelles variables configurent les embeddings et leur parallelisme ?",
+            "Quelles sont les limites MVP encore presentes dans AdrienCoder ?",
+            "Comment brancher un worker GPU local et verifier qu'il est healthy ?"
+        ];
     }
 
     private sealed record CliStatusResponse(

@@ -129,8 +129,10 @@ adriencoder worker
 adriencoder index . AdrienCoder
 adriencoder chat --repo AdrienCoder "Explique l'architecture du projet"
 adriencoder chat --repo AdrienCoder --debug-context "Explique l'architecture du projet"
+adriencoder chat --repo AdrienCoder --save-training training-data\manual.jsonl "Explique l'architecture du projet"
 adriencoder index . AdrienCoder --force
 adriencoder ask "Reponds juste ok"
+adriencoder eval --repo AdrienCoder
 adriencoder status
 adriencoder models
 adriencoder local index . AdrienCoder
@@ -163,11 +165,28 @@ dotnet run --project src/AdrienCoder.WorkerGpu
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
 dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo "Explique le flux principal"
 dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo --debug-context "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo --save-training training-data\manual.jsonl "Explique le flux principal"
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo mon-repo --force
 dotnet run --project src/AdrienCoder.Client.Cli -- ask "Reponds juste ok"
+dotnet run --project src/AdrienCoder.Client.Cli -- eval --repo mon-repo
 dotnet run --project src/AdrienCoder.Client.Cli -- status
 dotnet run --project src/AdrienCoder.Client.Cli -- models
 ```
+
+## Evaluation et donnees de fine-tuning
+
+Le CLI peut maintenant produire des fichiers JSONL pour evaluer le systeme et
+preparer un futur fine-tuning:
+
+```cmd
+adriencoder eval --repo AdrienCoder --out training-data\eval-adriencoder.jsonl
+adriencoder chat --repo AdrienCoder --save-training training-data\manual.jsonl "Pourquoi l'indexation ignore certains fichiers ?"
+```
+
+Les lignes JSONL contiennent la question, le contexte RAG, la reponse du
+modele, le provider utilise, la latence et un champ `expectedOutput` a remplir
+manuellement. Les commandes d'entrainement QLoRA Vast/local GPU sont dans
+`training/README.md`.
 
 ## Deploiement VPS
 

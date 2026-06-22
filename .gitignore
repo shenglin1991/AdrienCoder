@@ -389,3 +389,7 @@ FodyWeavers.xsd
 # Secrets
 appsettings.*.json
 !appsettings.Development.json
+
+# AdrienCoder local training artifacts
+training-data/
+.venv/
