@@ -12,17 +12,20 @@ namespace AdrienCoder.Server.Features.Monitoring.Services;
 public class MonitoringService
 {
     private readonly QdrantService _qdrantService;
+    private readonly EmbeddingService _embeddingService;
     private readonly LlmRouterService _llmRouterService;
     private readonly OpenAiCompatibleOptions _openAiOptions;
     private readonly OllamaOptions _ollamaOptions;
 
     public MonitoringService(
         QdrantService qdrantService,
+        EmbeddingService embeddingService,
         LlmRouterService llmRouterService,
         IOptions<OpenAiCompatibleOptions> openAiOptions,
         IOptions<OllamaOptions> ollamaOptions)
     {
         _qdrantService = qdrantService;
+        _embeddingService = embeddingService;
         _llmRouterService = llmRouterService;
         _openAiOptions = openAiOptions.Value;
         _ollamaOptions = ollamaOptions.Value;
@@ -31,12 +34,14 @@ public class MonitoringService
     public async Task<AppStatusResponse> GetStatusAsync()
     {
         var qdrantOk = await _qdrantService.IsHealthyAsync();
+        var embeddingOk = await _embeddingService.IsHealthyAsync();
         var activeProvider = await _llmRouterService.GetActiveProviderAsync();
 
         return new AppStatusResponse
         {
             Api = "ok",
             Qdrant = qdrantOk ? "ok" : "unavailable",
+            Embedding = embeddingOk ? "ok" : "unavailable",
             Llm = activeProvider != "None" ? "ok" : "unavailable",
             ActiveProvider = activeProvider,
             Model = GetActiveModel(activeProvider),

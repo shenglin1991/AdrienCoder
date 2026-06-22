@@ -65,8 +65,8 @@ Ne versionnez pas de vraies cles. Utilisez les variables d'environnement:
 # Server VPS
 $env:Authentication__ApiKey = "..."
 $env:Qdrant__Host = "127.0.0.1"
-$env:Embedding__ApiFormat = "OpenAICompatible"
-$env:Embedding__BaseUrl = "http://127.0.0.1:18000/v1/"
+$env:Embedding__ApiFormat = "Ollama"
+$env:Embedding__BaseUrl = "http://127.0.0.1:11434/"
 $env:Embedding__ApiKey = ""
 $env:Embedding__Model = "nomic-embed-text"
 $env:Embedding__VectorSize = "768"
@@ -98,9 +98,10 @@ L'indexation calcule les embeddings en parallele selon
 `Embedding__MaxParallelism=4`; si Ollama ralentit ou sature, revenez a `2`.
 En production, les embeddings peuvent viser Vast via un endpoint
 OpenAI-compatible (`Embedding:ApiFormat=OpenAICompatible`,
-`Embedding:BaseUrl=http://127.0.0.1:18000/v1/`). Si le pod Vast expose Ollama
-plutot qu'un endpoint `/v1`, utilisez `Embedding:ApiFormat=Ollama` avec la
-base URL Ollama correspondante.
+`Embedding:BaseUrl=http://127.0.0.1:18000/v1/`) seulement si le pod Vast sert
+un endpoint `/v1/embeddings`. Le tunnel Vast de chat ne suffit pas. Par defaut,
+le Server garde donc les embeddings sur Ollama VPS (`http://127.0.0.1:11434/`)
+pour que le chat RAG reste disponible meme sans Vast embeddings.
 Avant l'upload complet, le Client envoie une verification legere basee sur la
 signature du depot: si rien n'a change, le Server reactive simplement l'index
 existant. Lors d'une reindexation partielle, les chunks deja presents avec le

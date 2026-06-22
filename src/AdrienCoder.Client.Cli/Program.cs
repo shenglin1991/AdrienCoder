@@ -192,6 +192,7 @@ internal static class CliApplication
 
         Console.WriteLine($"API:      {response.Api}");
         Console.WriteLine($"Qdrant:   {response.Qdrant}");
+        Console.WriteLine($"Embedding:{response.Embedding}");
         Console.WriteLine($"LLM:      {response.Llm}");
         Console.WriteLine($"Provider: {response.ActiveProvider}");
         Console.WriteLine($"Model:    {response.Model ?? "(none)"}");
@@ -354,6 +355,7 @@ internal static class CliApplication
     private sealed record CliStatusResponse(
         string Api,
         string Qdrant,
+        string Embedding,
         string Llm,
         string ActiveProvider,
         string? Model,

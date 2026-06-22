@@ -19,6 +19,19 @@ public class EmbeddingService
         _options = options.Value;
     }
 
+    public async Task<bool> IsHealthyAsync()
+    {
+        try
+        {
+            await EmbedAsync("health");
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<float[]> EmbedAsync(string text)
     {
         var vector = _options.ApiFormat.Equals(
