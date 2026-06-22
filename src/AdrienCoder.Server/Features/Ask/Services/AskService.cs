@@ -1,5 +1,6 @@
 using AdrienCoder.Server.Features.Indexing.Services;
 using AdrienCoder.Server.Features.Llm.Services;
+using AdrienCoder.Server.Features.Vector.Models;
 
 namespace AdrienCoder.Server.Features.Ask.Services;
 
@@ -53,5 +54,15 @@ public class AskService
             question,
             context,
             cancellationToken);
+    }
+
+    public Task<(VectorIndexState Index, IReadOnlyList<VectorSearchResult> Chunks)>
+        GetDebugContextAsync(
+            string question,
+            string? repositoryName = null)
+    {
+        return _repositoryIndexingService.GetDebugContextAsync(
+            question,
+            repositoryName);
     }
 }

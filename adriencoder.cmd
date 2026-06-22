@@ -90,8 +90,8 @@ echo.
 echo   adriencoder build
 echo   adriencoder server
 echo   adriencoder worker
-echo   adriencoder index ^<repoPath^> [repositoryName]
-echo   adriencoder chat [--repo repositoryName] [--no-context] ^<question...^>
+echo   adriencoder index ^<repoPath^> [repositoryName] [--force]
+echo   adriencoder chat [--repo repositoryName] [--no-context] [--debug-context] ^<question...^>
 echo   adriencoder ask ^<question...^>
 echo   adriencoder status
 echo   adriencoder models
@@ -100,6 +100,8 @@ echo.
 echo Exemples:
 echo   adriencoder index . AdrienCoder
 echo   adriencoder chat --repo AdrienCoder "Explique l'architecture"
+echo   adriencoder chat --repo AdrienCoder --debug-context "Explique l'architecture"
+echo   adriencoder index . AdrienCoder --force
 echo   adriencoder ask "Reponds juste ok"
 echo   adriencoder status
 echo   adriencoder local index . AdrienCoder

@@ -74,6 +74,48 @@ public sealed class ChatController : ControllerBase
         }
     }
 
+    [HttpPost("context")]
+    public async Task<ActionResult<ChatContextDebugResponse>> GetContext(
+        [FromBody] ChatRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return BadRequest("Question is required.");
+        }
+
+        try
+        {
+            var (index, chunks) = await _askService.GetDebugContextAsync(
+                request.Question,
+                request.RepositoryName);
+
+            return Ok(new ChatContextDebugResponse(
+                index.RepositoryPath,
+                index.RepositorySignature,
+                chunks
+                    .Select(chunk => new ChatContextChunk(
+                        chunk.FilePath,
+                        chunk.ChunkIndex,
+                        chunk.Score,
+                        chunk.Content))
+                    .ToList()));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+        catch (HttpRequestException exception)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new
+                {
+                    message = "The embedding backend rejected the request.",
+                    detail = exception.Message
+                });
+        }
+    }
+
     [HttpPost("stream")]
     public async Task StreamChat([FromBody] ChatRequest request)
     {

@@ -124,7 +124,8 @@ public sealed class RepositoryIndexingService
         await _qdrantService.UpsertChunkBatchAsync(
             chunks,
             request.RepositoryName,
-            request.RepositorySignature);
+            request.RepositorySignature,
+            request.Force);
 
         return new IndexRepositoryResponse(
             request.IndexedFiles,
@@ -251,18 +252,39 @@ public sealed class RepositoryIndexingService
         int limit = 5,
         int neighborWindow = 1)
     {
-        var index = string.IsNullOrWhiteSpace(repositoryName)
-            ? await _qdrantService.GetActiveIndexAsync()
-            : await _qdrantService.GetRepositoryIndexAsync(repositoryName);
+        var contextChunks = await GetContextChunksAsync(
+            question,
+            repositoryName,
+            limit,
+            neighborWindow);
 
-        if (index is null)
-        {
-            var message = string.IsNullOrWhiteSpace(repositoryName)
-                ? "No vector index found. Upload a repository first."
-                : $"No vector index found for repository '{repositoryName}'.";
+        return FormatContext(contextChunks);
+    }
 
-            throw new InvalidOperationException(message);
-        }
+    public async Task<(VectorIndexState Index, IReadOnlyList<VectorSearchResult> Chunks)>
+        GetDebugContextAsync(
+            string question,
+            string? repositoryName = null,
+            int limit = 5,
+            int neighborWindow = 1)
+    {
+        var index = await ResolveIndexAsync(repositoryName);
+        var chunks = await GetContextChunksAsync(
+            question,
+            repositoryName,
+            limit,
+            neighborWindow);
+
+        return (index, chunks);
+    }
+
+    private async Task<IReadOnlyList<VectorSearchResult>> GetContextChunksAsync(
+        string question,
+        string? repositoryName,
+        int limit,
+        int neighborWindow)
+    {
+        var index = await ResolveIndexAsync(repositoryName);
 
         var chunks = await _qdrantService.SearchAsync(
             question,
@@ -282,7 +304,7 @@ public sealed class RepositoryIndexingService
             index.RepositoryPath,
             index.RepositorySignature);
 
-        var contextChunks = chunks
+        return chunks
             .Concat(neighborChunks)
             .GroupBy(
                 chunk => $"{chunk.FilePath}\0{chunk.ChunkIndex}",
@@ -294,7 +316,28 @@ public sealed class RepositoryIndexingService
             .ThenBy(chunk => chunk.FilePath, StringComparer.Ordinal)
             .ThenBy(chunk => chunk.ChunkIndex)
             .ToList();
+    }
 
+    private async Task<VectorIndexState> ResolveIndexAsync(string? repositoryName)
+    {
+        var index = string.IsNullOrWhiteSpace(repositoryName)
+            ? await _qdrantService.GetActiveIndexAsync()
+            : await _qdrantService.GetRepositoryIndexAsync(repositoryName);
+
+        if (index is null)
+        {
+            var message = string.IsNullOrWhiteSpace(repositoryName)
+                ? "No vector index found. Upload a repository first."
+                : $"No vector index found for repository '{repositoryName}'.";
+
+            throw new InvalidOperationException(message);
+        }
+
+        return index;
+    }
+
+    private static string FormatContext(IReadOnlyList<VectorSearchResult> contextChunks)
+    {
         return string.Join("\n\n", contextChunks.Select(chunk => $"""
         --- FILE: {chunk.FilePath} | CHUNK: {chunk.ChunkIndex} | SCORE: {chunk.Score} ---
         {chunk.Content}

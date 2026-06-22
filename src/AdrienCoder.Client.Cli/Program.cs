@@ -71,16 +71,16 @@ internal static class CliApplication
             return UnknownCommand(args[0]);
         }
 
-        if (command == "index" && args.Length is < 2 or > 3)
+        if (command == "index" && args.Length < 2)
         {
-            Console.Error.WriteLine("Usage: adriencoder index <repoPath> [repositoryName]");
+            Console.Error.WriteLine("Usage: adriencoder index <repoPath> [repositoryName] [--force]");
             return 1;
         }
 
         if (command == "chat" && args.Length < 2)
         {
             Console.Error.WriteLine(
-                "Usage: adriencoder chat [--repo <repositoryName>] [--no-context] <question...>");
+                "Usage: adriencoder chat [--repo <repositoryName>] [--no-context] [--debug-context] <question...>");
             return 1;
         }
 
@@ -125,14 +125,15 @@ internal static class CliApplication
 
     private static async Task<int> RunIndexAsync(HttpClient client, string[] args)
     {
-        var repositoryPath = Path.GetFullPath(args[1]);
+        var indexArgs = ParseIndexArgs(args);
+        var repositoryPath = Path.GetFullPath(indexArgs.RepositoryPath);
         if (!Directory.Exists(repositoryPath))
         {
             throw new DirectoryNotFoundException($"Dépôt introuvable: {repositoryPath}");
         }
 
-        var repositoryName = args.Length == 3
-            ? args[2].Trim()
+        var repositoryName = indexArgs.RepositoryName is not null
+            ? indexArgs.RepositoryName.Trim()
             : new DirectoryInfo(repositoryPath).Name;
 
         if (string.IsNullOrWhiteSpace(repositoryName))
@@ -144,21 +145,29 @@ internal static class CliApplication
         var signature = RepositoryScanner.ComputeSignature(files);
         var chunkCount = RepositoryScanner.CountChunks(files);
         var indexedFiles = files.Count;
-        var check = await PostAsync<IndexRepositoryCheckRequest, IndexRepositoryResponse>(
-            client,
-            "api/index/check",
-            new IndexRepositoryCheckRequest(
-                repositoryName,
-                signature,
-                indexedFiles,
-                chunkCount));
-
-        if (!check.Updated)
+        if (!indexArgs.Force)
         {
-            Console.WriteLine(
+            var check = await PostAsync<IndexRepositoryCheckRequest, IndexRepositoryResponse>(
+                client,
+                "api/index/check",
+                new IndexRepositoryCheckRequest(
+                    repositoryName,
+                    signature,
+                    indexedFiles,
+                    chunkCount));
+
+            if (!check.Updated)
+            {
+                Console.WriteLine(
                 $"Indexation terminÃ©e: {check.IndexedFiles} fichiers, " +
                 $"{check.Chunks} chunks, mise Ã  jour: {check.Updated}.");
-            return 0;
+                return 0;
+            }
+        }
+        else
+        {
+            Console.WriteLine(
+                "Reindex force: verification de signature ignoree, embeddings recalcules.");
         }
 
         var chunks = RepositoryScanner.CreateChunks(files);
@@ -175,7 +184,8 @@ internal static class CliApplication
                     signature,
                     indexedFiles,
                     chunks.Count,
-                    batch));
+                    batch,
+                    indexArgs.Force));
 
             Console.WriteLine(
                 $"Indexation: {uploadedChunks}/{chunks.Count} chunks envoyes.");
@@ -201,12 +211,26 @@ internal static class CliApplication
         var repositoryName = ExtractRepositoryName(
             args,
             out var questionArgs,
-            out var noContext);
+            out var noContext,
+            out var debugContext);
         var question = string.Join(' ', questionArgs).Trim();
 
         if (question.Length == 0)
         {
             throw new ArgumentException("La question ne peut pas être vide.");
+        }
+
+        if (debugContext && noContext)
+        {
+            throw new ArgumentException(
+                "--debug-context cannot be used with --no-context.");
+        }
+
+        if (debugContext)
+        {
+            await PrintDebugContextAsync(
+                client,
+                new ChatRequest(question, repositoryName));
         }
 
         await PostStreamAsync(
@@ -241,9 +265,15 @@ internal static class CliApplication
         Console.WriteLine($"API:      {response.Api}");
         Console.WriteLine($"Qdrant:   {response.Qdrant}");
         Console.WriteLine($"Embedding:{response.Embedding}");
+        Console.WriteLine($"Embedder: {response.EmbeddingBackend ?? "(unknown)"} / {response.EmbeddingModel ?? "(none)"}");
         Console.WriteLine($"LLM:      {response.Llm}");
         Console.WriteLine($"Provider: {response.ActiveProvider}");
         Console.WriteLine($"Model:    {response.Model ?? "(none)"}");
+        Console.WriteLine($"Workers:  {response.WorkersHealthy}/{response.WorkersConnected} healthy");
+        Console.WriteLine($"Worker:   {response.WorkerModel ?? "(none)"}");
+        Console.WriteLine($"Repo:     {response.ActiveRepository ?? "(none)"}");
+        Console.WriteLine($"Chunks:   {response.ActiveRepositoryChunks?.ToString() ?? "(none)"}");
+        Console.WriteLine($"Index:    {FormatSignature(response.LastIndexSignature)}");
         Console.WriteLine($"Time:     {response.Time:O}");
         return 0;
     }
@@ -267,6 +297,31 @@ internal static class CliApplication
         }
 
         return 0;
+    }
+
+    private static async Task PrintDebugContextAsync(
+        HttpClient client,
+        ChatRequest request)
+    {
+        var response = await PostAsync<ChatRequest, ChatContextDebugResponse>(
+            client,
+            "api/chat/context",
+            request);
+
+        Console.WriteLine("=== RAG context ===");
+        Console.WriteLine(
+            $"Repository: {response.RepositoryName} ({FormatSignature(response.RepositorySignature)})");
+        Console.WriteLine($"Chunks:     {response.Chunks.Count}");
+
+        foreach (var chunk in response.Chunks)
+        {
+            Console.WriteLine(
+                $"[{chunk.Score:0.000}] {chunk.FilePath}#{chunk.ChunkIndex}");
+            Console.WriteLine(TrimForDisplay(chunk.Content, 360));
+            Console.WriteLine();
+        }
+
+        Console.WriteLine("=== Answer ===");
     }
 
     private static async Task<TResponse> PostAsync<TRequest, TResponse>(
@@ -418,8 +473,9 @@ internal static class CliApplication
               vps                                 Alias explicite du Server public.
 
             Commandes:
-              index <repoPath> [repositoryName]  Indexe un dépôt local.
-              chat [--repo <repositoryName>] [--no-context] <question...>
+              index <repoPath> [repositoryName] [--force]
+                                                  Indexe un depot local.
+              chat [--repo <repositoryName>] [--no-context] [--debug-context] <question...>
                                                   Pose une question avec contexte RAG.
               ask <question...>                  Pose une question sans contexte RAG.
               status                              Affiche l'etat API, Qdrant et LLM.
@@ -434,10 +490,12 @@ internal static class CliApplication
     private static string? ExtractRepositoryName(
         string[] args,
         out IReadOnlyList<string> questionArgs,
-        out bool noContext)
+        out bool noContext,
+        out bool debugContext)
     {
         string? repositoryName = null;
         noContext = false;
+        debugContext = false;
         var remainingArgs = new List<string>();
 
         for (var index = 1; index < args.Length; index++)
@@ -464,11 +522,76 @@ internal static class CliApplication
                 continue;
             }
 
+            if (argument == "--debug-context")
+            {
+                debugContext = true;
+                continue;
+            }
+
             remainingArgs.Add(argument);
         }
 
         questionArgs = remainingArgs;
         return repositoryName;
+    }
+
+    private static IndexCommandArgs ParseIndexArgs(string[] args)
+    {
+        string? repositoryName = null;
+        var force = false;
+        var positional = new List<string>();
+
+        for (var index = 1; index < args.Length; index++)
+        {
+            var argument = args[index];
+
+            if (argument == "--force")
+            {
+                force = true;
+                continue;
+            }
+
+            if (argument.StartsWith("-", StringComparison.Ordinal))
+            {
+                throw new ArgumentException($"Unknown index option: {argument}");
+            }
+
+            positional.Add(argument);
+        }
+
+        if (positional.Count is < 1 or > 2)
+        {
+            throw new ArgumentException(
+                "Usage: adriencoder index <repoPath> [repositoryName] [--force]");
+        }
+
+        if (positional.Count == 2)
+        {
+            repositoryName = positional[1];
+        }
+
+        return new IndexCommandArgs(positional[0], repositoryName, force);
+    }
+
+    private static string FormatSignature(string? signature)
+    {
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            return "(none)";
+        }
+
+        return signature.Length <= 12 ? signature : signature[..12];
+    }
+
+    private static string TrimForDisplay(string content, int maxLength)
+    {
+        var normalized = content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Trim();
+
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength] + "...";
     }
 
     private sealed record CliStatusResponse(
@@ -478,7 +601,23 @@ internal static class CliApplication
         string Llm,
         string ActiveProvider,
         string? Model,
+        string? ActiveRepository,
+        string? ActiveRepositorySignature,
+        int? ActiveRepositoryChunks,
+        string? LastIndexRepository,
+        string? LastIndexSignature,
+        int? LastIndexChunks,
+        string? EmbeddingBackend,
+        string? EmbeddingModel,
+        int WorkersConnected,
+        int WorkersHealthy,
+        string? WorkerModel,
         DateTimeOffset Time);
+
+    private sealed record IndexCommandArgs(
+        string RepositoryPath,
+        string? RepositoryName,
+        bool Force);
 
     private sealed record ServerSettings(Uri BaseUrl, string ApiKey)
     {

@@ -5,4 +5,5 @@ public sealed record IndexRepositoryBatchRequest(
     string RepositorySignature,
     int IndexedFiles,
     int TotalChunks,
-    IReadOnlyList<CodeChunkDto> Chunks);
+    IReadOnlyList<CodeChunkDto> Chunks,
+    bool Force = false);

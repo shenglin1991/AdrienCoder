@@ -300,7 +300,8 @@ public class QdrantService
     public async Task UpsertChunkBatchAsync(
         IReadOnlyList<CodeChunk> chunks,
         string repositoryPath,
-        string repositorySignature)
+        string repositorySignature,
+        bool force = false)
     {
         await CreateCollectionIfNotExistsAsync();
 
@@ -312,9 +313,9 @@ public class QdrantService
         var contentHashes = chunks
             .Select(chunk => ComputeContentHash(chunk.Content))
             .ToArray();
-        var reusableVectors = await GetReusableChunkVectorsAsync(
-            chunkPointIds,
-            batchSize);
+        var reusableVectors = force
+            ? new Dictionary<string, StoredChunkVector>(StringComparer.Ordinal)
+            : await GetReusableChunkVectorsAsync(chunkPointIds, batchSize);
         var chunkPoints = new object[chunks.Count];
 
         await Parallel.ForEachAsync(

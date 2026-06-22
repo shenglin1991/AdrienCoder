@@ -128,6 +128,8 @@ adriencoder server
 adriencoder worker
 adriencoder index . AdrienCoder
 adriencoder chat --repo AdrienCoder "Explique l'architecture du projet"
+adriencoder chat --repo AdrienCoder --debug-context "Explique l'architecture du projet"
+adriencoder index . AdrienCoder --force
 adriencoder ask "Reponds juste ok"
 adriencoder status
 adriencoder models
@@ -160,6 +162,8 @@ dotnet run --project src/AdrienCoder.WorkerGpu
 
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
 dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo --debug-context "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo mon-repo --force
 dotnet run --project src/AdrienCoder.Client.Cli -- ask "Reponds juste ok"
 dotnet run --project src/AdrienCoder.Client.Cli -- status
 dotnet run --project src/AdrienCoder.Client.Cli -- models
@@ -202,6 +206,7 @@ relatifs au depot.
 | `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
 | `POST` | `/api/chat` | Question RAG sur l'index actif ou le `repositoryName` demande |
 | `POST` | `/api/chat/ask` | Question sans contexte RAG |
+| `POST` | `/api/chat/context` | Liste les chunks RAG selectionnes pour debug |
 | `POST` | `/api/chat/stream` | Question RAG en streaming NDJSON |
 | `POST` | `/api/chat/ask/stream` | Question sans contexte RAG en streaming NDJSON |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
