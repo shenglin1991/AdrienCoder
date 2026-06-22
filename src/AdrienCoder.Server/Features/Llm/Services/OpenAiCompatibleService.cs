@@ -52,7 +52,7 @@ public class OpenAiCompatibleService : ILLMService
                 new { role = "user", content = question }
             },
             temperature = 0.2,
-            max_tokens = 800
+            max_tokens = _llmOptions.MaxOutputTokens
         };
 
         var response = await _httpClient.PostAsJsonAsync("chat/completions", payload);

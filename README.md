@@ -102,6 +102,8 @@ OpenAI-compatible (`Embedding:ApiFormat=OpenAICompatible`,
 un endpoint `/v1/embeddings`. Le tunnel Vast de chat ne suffit pas. Par defaut,
 le Server garde donc les embeddings sur Ollama VPS (`http://127.0.0.1:11434/`)
 pour que le chat RAG reste disponible meme sans Vast embeddings.
+La longueur de sortie LLM se regle avec `LLM:MaxOutputTokens` cote Server et
+`Ollama:NumPredict` cote WorkerGpu.
 Avant l'upload complet, le Client envoie une verification legere basee sur la
 signature du depot: si rien n'a change, le Server reactive simplement l'index
 existant. Lors d'une reindexation partielle, les chunks deja presents avec le
@@ -124,6 +126,7 @@ adriencoder server
 adriencoder worker
 adriencoder index . AdrienCoder
 adriencoder chat --repo AdrienCoder "Explique l'architecture du projet"
+adriencoder ask "Reponds juste ok"
 adriencoder status
 adriencoder models
 adriencoder local index . AdrienCoder
@@ -155,6 +158,7 @@ dotnet run --project src/AdrienCoder.WorkerGpu
 
 dotnet run --project src/AdrienCoder.Client.Cli -- index C:\dev\mon-repo
 dotnet run --project src/AdrienCoder.Client.Cli -- chat --repo mon-repo "Explique le flux principal"
+dotnet run --project src/AdrienCoder.Client.Cli -- ask "Reponds juste ok"
 dotnet run --project src/AdrienCoder.Client.Cli -- status
 dotnet run --project src/AdrienCoder.Client.Cli -- models
 ```
@@ -193,6 +197,7 @@ relatifs au depot.
 | `GET` | `/api/index/status` | Index Qdrant actif |
 | `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
 | `POST` | `/api/chat` | Question RAG sur l'index actif ou le `repositoryName` demande |
+| `POST` | `/api/chat/ask` | Question sans contexte RAG |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
 | `GET` | `/api/status/models` | Modeles du backend LLM actif |
 | `GET` | `/api/workers` | Workers GPU connectes et dernier heartbeat |
@@ -225,5 +230,6 @@ partent donc vers `https://adrien-sheng-lin.fr/adriencoder/api/...`.
 - L'upload HTTP des chunks reste monolithique avec une limite de 100 Mio quand
   le depot a change. Un protocole par lots sera preferable pour les tres grands
   depots.
-- Sans `repositoryName`, le chat utilise encore l'index actif global. Avec
+- `ask` et `chat --no-context` ne font pas de recherche RAG. Sans
+  `repositoryName`, `chat` utilise encore l'index actif global. Avec
   `repositoryName`, il cible l'index nomme.

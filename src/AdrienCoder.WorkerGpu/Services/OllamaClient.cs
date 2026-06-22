@@ -27,7 +27,8 @@ public sealed class OllamaClient : ILocalLlmClient, IDisposable
         var request = new OllamaChatRequest(
             _options.Model,
             [new OllamaChatMessage("user", prompt)],
-            false);
+            false,
+            new OllamaChatOptions(_options.NumPredict));
 
         using var response = await _httpClient.PostAsJsonAsync(
             "api/chat",
@@ -52,7 +53,11 @@ public sealed class OllamaClient : ILocalLlmClient, IDisposable
     private sealed record OllamaChatRequest(
         string Model,
         IReadOnlyList<OllamaChatMessage> Messages,
-        bool Stream);
+        bool Stream,
+        OllamaChatOptions Options);
+
+    private sealed record OllamaChatOptions(
+        [property: JsonPropertyName("num_predict")] int NumPredict);
 
     private sealed record OllamaChatMessage(string Role, string Content);
 

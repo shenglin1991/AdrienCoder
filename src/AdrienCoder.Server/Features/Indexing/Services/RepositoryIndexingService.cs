@@ -169,7 +169,8 @@ public sealed class RepositoryIndexingService
     public async Task<string> BuildContextFromExistingIndexAsync(
         string question,
         string? repositoryName = null,
-        int limit = 5)
+        int limit = 5,
+        int neighborWindow = 1)
     {
         var index = string.IsNullOrWhiteSpace(repositoryName)
             ? await _qdrantService.GetActiveIndexAsync()
@@ -196,7 +197,26 @@ public sealed class RepositoryIndexingService
                 "No relevant chunks found. Reindex the repository first.");
         }
 
-        return string.Join("\n\n", chunks.Select(chunk => $"""
+        var neighborChunks = await _qdrantService.GetNeighborChunksAsync(
+            chunks,
+            neighborWindow,
+            index.RepositoryPath,
+            index.RepositorySignature);
+
+        var contextChunks = chunks
+            .Concat(neighborChunks)
+            .GroupBy(
+                chunk => $"{chunk.FilePath}\0{chunk.ChunkIndex}",
+                StringComparer.Ordinal)
+            .Select(group => group
+                .OrderByDescending(chunk => chunk.Score)
+                .First())
+            .OrderByDescending(chunk => chunk.Score)
+            .ThenBy(chunk => chunk.FilePath, StringComparer.Ordinal)
+            .ThenBy(chunk => chunk.ChunkIndex)
+            .ToList();
+
+        return string.Join("\n\n", contextChunks.Select(chunk => $"""
         --- FILE: {chunk.FilePath} | CHUNK: {chunk.ChunkIndex} | SCORE: {chunk.Score} ---
         {chunk.Content}
         """));

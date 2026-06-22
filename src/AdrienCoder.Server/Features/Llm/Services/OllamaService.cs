@@ -52,7 +52,11 @@ public class OllamaService : ILLMService
                     content = question
                 }
             },
-            stream = false
+            stream = false,
+            options = new
+            {
+                num_predict = _llmOptions.MaxOutputTokens
+            }
         };
 
         var response = await _httpClient.PostAsJsonAsync("api/chat", payload);

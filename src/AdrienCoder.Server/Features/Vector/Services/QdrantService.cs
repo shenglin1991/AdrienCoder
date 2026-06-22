@@ -496,6 +496,12 @@ public class QdrantService
         return new Guid(hash.AsSpan(0, 16)).ToString();
     }
 
+    private static string CreateChunkId(string relativePath, int chunkIndex)
+    {
+        var value = Encoding.UTF8.GetBytes($"{relativePath}\0{chunkIndex}");
+        return Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
+    }
+
     private static string ComputeContentHash(string content)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(content));
@@ -573,6 +579,119 @@ public class QdrantService
         return results;
     }
 
+    public async Task<List<VectorSearchResult>> GetNeighborChunksAsync(
+        IReadOnlyList<VectorSearchResult> chunks,
+        int neighborWindow,
+        string repositoryPath,
+        string repositorySignature)
+    {
+        if (neighborWindow <= 0 || chunks.Count == 0)
+        {
+            return [];
+        }
+
+        var candidates = new Dictionary<string, NeighborCandidate>(
+            StringComparer.Ordinal);
+
+        foreach (var chunk in chunks)
+        {
+            for (var offset = -neighborWindow; offset <= neighborWindow; offset++)
+            {
+                if (offset == 0)
+                {
+                    continue;
+                }
+
+                var neighborIndex = chunk.ChunkIndex + offset;
+                if (neighborIndex < 0)
+                {
+                    continue;
+                }
+
+                var id = CreatePointId(
+                    $"{repositoryPath}::{CreateChunkId(chunk.FilePath, neighborIndex)}");
+                var score = chunk.Score - (0.001f * Math.Abs(offset));
+
+                if (!candidates.TryGetValue(id, out var existing)
+                    || score > existing.Score)
+                {
+                    candidates[id] = new NeighborCandidate(score);
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return [];
+        }
+
+        var results = new List<VectorSearchResult>();
+        var batchSize = Math.Max(1, _embeddingOptions.UpsertBatchSize);
+
+        foreach (var batch in candidates.Keys.Chunk(batchSize))
+        {
+            var response = await _httpClient.PostAsJsonAsync(
+                $"collections/{_options.CollectionName}/points",
+                new
+                {
+                    ids = batch,
+                    with_payload = true,
+                    with_vector = false
+                });
+
+            response.EnsureSuccessStatusCode();
+
+            using var document = JsonDocument.Parse(
+                await response.Content.ReadAsStringAsync());
+
+            foreach (var point in document.RootElement
+                .GetProperty("result")
+                .EnumerateArray())
+            {
+                if (!point.TryGetProperty("payload", out var payload))
+                {
+                    continue;
+                }
+
+                var payloadRepositoryPath = GetString(
+                    payload,
+                    "repositoryPath",
+                    "RepositoryPath");
+                var payloadRepositorySignature = GetString(
+                    payload,
+                    "repositorySignature",
+                    "RepositorySignature");
+
+                if (!string.Equals(
+                        payloadRepositoryPath,
+                        repositoryPath,
+                        StringComparison.Ordinal)
+                    || !string.Equals(
+                        payloadRepositorySignature,
+                        repositorySignature,
+                        StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var id = point.GetProperty("id").ToString();
+                var score = candidates.TryGetValue(id, out var candidate)
+                    ? candidate.Score
+                    : 0;
+
+                results.Add(new VectorSearchResult
+                {
+                    Score = score,
+                    FilePath = GetString(payload, "FilePath", "filePath"),
+                    Content = GetString(payload, "Content", "content"),
+                    ChunkIndex = GetInt(payload, "ChunkIndex", "chunkIndex")
+                });
+            }
+        }
+
+        return results;
+    }
+
     private static string GetString(JsonElement element, params string[] keys)
     {
         foreach (var key in keys)
@@ -617,4 +736,6 @@ public class QdrantService
             return string.Equals(Content, content, StringComparison.Ordinal);
         }
     }
+
+    private sealed record NeighborCandidate(float Score);
 }

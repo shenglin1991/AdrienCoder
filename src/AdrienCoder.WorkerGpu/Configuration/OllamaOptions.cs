@@ -7,4 +7,6 @@ public sealed class OllamaOptions
     public string BaseUrl { get; set; } = string.Empty;
 
     public string Model { get; set; } = string.Empty;
+
+    public int NumPredict { get; set; } = 2048;
 }

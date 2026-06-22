@@ -46,4 +46,30 @@ public sealed class ChatController : ControllerBase
                 });
         }
     }
+
+    [HttpPost("ask")]
+    public async Task<ActionResult<ChatResponse>> Ask(
+        [FromBody] ChatRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Question))
+        {
+            return BadRequest("Question is required.");
+        }
+
+        try
+        {
+            var answer = await _askService.AskAsync(request.Question);
+            return Ok(new ChatResponse(answer));
+        }
+        catch (HttpRequestException exception)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new
+                {
+                    message = "The LLM backend rejected the request.",
+                    detail = exception.Message
+                });
+        }
+    }
 }

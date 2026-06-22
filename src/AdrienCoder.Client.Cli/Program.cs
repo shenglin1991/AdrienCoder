@@ -65,7 +65,7 @@ internal static class CliApplication
         }
 
         var command = args[0].ToLowerInvariant();
-        if (command is not ("index" or "chat" or "status" or "models"))
+        if (command is not ("index" or "chat" or "ask" or "status" or "models"))
         {
             return UnknownCommand(args[0]);
         }
@@ -79,7 +79,13 @@ internal static class CliApplication
         if (command == "chat" && args.Length < 2)
         {
             Console.Error.WriteLine(
-                "Usage: adriencoder chat [--repo <repositoryName>] <question...>");
+                "Usage: adriencoder chat [--repo <repositoryName>] [--no-context] <question...>");
+            return 1;
+        }
+
+        if (command == "ask" && args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: adriencoder ask <question...>");
             return 1;
         }
 
@@ -98,6 +104,7 @@ internal static class CliApplication
             {
                 "index" => await RunIndexAsync(client, args),
                 "chat" => await RunChatAsync(client, args),
+                "ask" => await RunAskAsync(client, args),
                 "status" => await RunStatusAsync(client),
                 "models" => await RunModelsAsync(client),
                 _ => throw new InvalidOperationException("Commande non prise en charge.")
@@ -169,7 +176,10 @@ internal static class CliApplication
 
     private static async Task<int> RunChatAsync(HttpClient client, string[] args)
     {
-        var repositoryName = ExtractRepositoryName(args, out var questionArgs);
+        var repositoryName = ExtractRepositoryName(
+            args,
+            out var questionArgs,
+            out var noContext);
         var question = string.Join(' ', questionArgs).Trim();
 
         if (question.Length == 0)
@@ -179,8 +189,26 @@ internal static class CliApplication
 
         var response = await PostAsync<ChatRequest, ChatResponse>(
             client,
-            "api/chat",
+            noContext ? "api/chat/ask" : "api/chat",
             new ChatRequest(question, repositoryName));
+
+        Console.WriteLine(response.Answer);
+        return 0;
+    }
+
+    private static async Task<int> RunAskAsync(HttpClient client, string[] args)
+    {
+        var question = string.Join(' ', args.Skip(1)).Trim();
+
+        if (question.Length == 0)
+        {
+            throw new ArgumentException("La question ne peut pas être vide.");
+        }
+
+        var response = await PostAsync<ChatRequest, ChatResponse>(
+            client,
+            "api/chat/ask",
+            new ChatRequest(question));
 
         Console.WriteLine(response.Answer);
         return 0;
@@ -309,8 +337,9 @@ internal static class CliApplication
 
             Commandes:
               index <repoPath> [repositoryName]  Indexe un dépôt local.
-              chat [--repo <repositoryName>] <question...>
-                                                  Pose une question au serveur.
+              chat [--repo <repositoryName>] [--no-context] <question...>
+                                                  Pose une question avec contexte RAG.
+              ask <question...>                  Pose une question sans contexte RAG.
               status                              Affiche l'etat API, Qdrant et LLM.
               models                              Affiche les modeles du backend LLM actif.
 
@@ -322,9 +351,11 @@ internal static class CliApplication
 
     private static string? ExtractRepositoryName(
         string[] args,
-        out IReadOnlyList<string> questionArgs)
+        out IReadOnlyList<string> questionArgs,
+        out bool noContext)
     {
         string? repositoryName = null;
+        noContext = false;
         var remainingArgs = new List<string>();
 
         for (var index = 1; index < args.Length; index++)
@@ -342,6 +373,12 @@ internal static class CliApplication
 
                 repositoryName = args[index + 1].Trim();
                 index++;
+                continue;
+            }
+
+            if (argument == "--no-context")
+            {
+                noContext = true;
                 continue;
             }
 
