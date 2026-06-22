@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AdrienCoder.Server.Features.Llm.Models;
 using Microsoft.Extensions.Options;
@@ -96,5 +97,96 @@ public class OllamaService : ILLMService
         """;
 
         return await AskAsync(fullPrompt);
+    }
+
+    public async IAsyncEnumerable<string> StreamAskAsync(
+        string question,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            model = _options.Model,
+            messages = new[]
+            {
+                new
+                {
+                    role = "system",
+                    content = _llmOptions.SystemPrompt
+                },
+                new
+                {
+                    role = "user",
+                    content = question
+                }
+            },
+            stream = true,
+            options = new
+            {
+                num_predict = _llmOptions.MaxOutputTokens
+            }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/chat")
+        {
+            Content = JsonContent.Create(payload)
+        };
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            using var document = JsonDocument.Parse(line);
+            if (document.RootElement.TryGetProperty("done", out var done)
+                && done.GetBoolean())
+            {
+                yield break;
+            }
+
+            if (!document.RootElement.TryGetProperty("message", out var message)
+                || !message.TryGetProperty("content", out var contentElement))
+            {
+                continue;
+            }
+
+            var content = contentElement.GetString();
+            if (!string.IsNullOrEmpty(content))
+            {
+                yield return content;
+            }
+        }
+    }
+
+    public IAsyncEnumerable<string> StreamAskWithContextAsync(
+        string question,
+        string context,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPrompt = $"""
+        Tu vas repondre a une question sur un projet de code.
+
+        Voici les fichiers du projet :
+
+        {context}
+
+        Question :
+        {question}
+
+        Reponds de facon structuree et concise.
+        """;
+
+        return StreamAskAsync(fullPrompt, cancellationToken);
     }
 }

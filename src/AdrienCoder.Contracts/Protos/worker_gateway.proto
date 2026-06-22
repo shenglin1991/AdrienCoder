@@ -13,6 +13,7 @@ message WorkerMessage {
     WorkerRegistration registration = 1;
     WorkerHeartbeat heartbeat = 2;
     JobResult job_result = 3;
+    JobChunk job_chunk = 4;
   }
 }
 
@@ -35,6 +36,11 @@ message JobResult {
   string error = 4;
 }
 
+message JobChunk {
+  string job_id = 1;
+  string delta = 2;
+}
+
 message ServerMessage {
   oneof payload {
     WorkerJob job = 1;
@@ -44,4 +50,5 @@ message ServerMessage {
 message WorkerJob {
   string job_id = 1;
   string prompt = 2;
+  bool stream = 3;
 }

@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Text;
 using AdrienCoder.Contracts.Worker;
 using AdrienCoder.WorkerGpu.Configuration;
 using AdrienCoder.WorkerGpu.Services;
@@ -166,9 +167,9 @@ public sealed class GpuWorker : BackgroundService
 
         try
         {
-            var response = await _llmClient.ChatAsync(
-                job.Prompt,
-                cancellationToken);
+            var response = job.Stream
+                ? await ProcessStreamingJobAsync(job, outgoing, cancellationToken)
+                : await _llmClient.ChatAsync(job.Prompt, cancellationToken);
 
             result = new JobResult
             {
@@ -196,6 +197,33 @@ public sealed class GpuWorker : BackgroundService
         await outgoing.WriteAsync(
             new WorkerMessage { JobResult = result },
             cancellationToken);
+    }
+
+    private async Task<string> ProcessStreamingJobAsync(
+        WorkerJob job,
+        ChannelWriter<WorkerMessage> outgoing,
+        CancellationToken cancellationToken)
+    {
+        var response = new StringBuilder();
+
+        await foreach (var delta in _llmClient.StreamChatAsync(
+            job.Prompt,
+            cancellationToken))
+        {
+            response.Append(delta);
+            await outgoing.WriteAsync(
+                new WorkerMessage
+                {
+                    JobChunk = new JobChunk
+                    {
+                        JobId = job.JobId,
+                        Delta = delta
+                    }
+                },
+                cancellationToken);
+        }
+
+        return response.ToString();
     }
 
     private async Task SendHeartbeatsAsync(

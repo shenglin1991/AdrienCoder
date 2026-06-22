@@ -48,6 +48,36 @@ public sealed class WorkerGpuLlmService : ILLMService
         """);
     }
 
+    public IAsyncEnumerable<string> StreamAskAsync(
+        string question,
+        CancellationToken cancellationToken = default)
+    {
+        var prompt = $"""
+        {_options.SystemPrompt}
+
+        {question}
+        """;
+
+        return _dispatcher.DispatchStreamingAsync(prompt, cancellationToken);
+    }
+
+    public IAsyncEnumerable<string> StreamAskWithContextAsync(
+        string question,
+        string context,
+        CancellationToken cancellationToken = default)
+    {
+        return StreamAskAsync($"""
+        Reponds a la question en utilisant uniquement le contexte de code utile.
+
+        <repository_context>
+        {context}
+        </repository_context>
+
+        Question:
+        {question}
+        """, cancellationToken);
+    }
+
     public Task<string> GetModelsAsync()
     {
         return Task.FromResult("""{"provider":"WorkerGpu"}""");

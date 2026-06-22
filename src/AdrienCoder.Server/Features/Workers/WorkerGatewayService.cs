@@ -65,6 +65,9 @@ public sealed class WorkerGatewayService : WorkerGateway.WorkerGatewayBase
                     case WorkerMessage.PayloadOneofCase.JobResult:
                         _dispatcher.Complete(message.JobResult);
                         break;
+                    case WorkerMessage.PayloadOneofCase.JobChunk:
+                        _dispatcher.AddChunk(message.JobChunk);
+                        break;
                 }
             }
         }

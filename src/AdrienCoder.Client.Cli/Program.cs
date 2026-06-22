@@ -12,6 +12,7 @@ internal static class CliApplication
 {
     private const int ChunkSize = 1200;
     private const int ChunkOverlap = 200;
+    private const int IndexUploadBatchSize = 128;
 
     private static readonly HashSet<string> IgnoredDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -161,12 +162,33 @@ internal static class CliApplication
         }
 
         var chunks = RepositoryScanner.CreateChunks(files);
-        var request = new IndexRepositoryRequest(repositoryName, signature, chunks);
+        var uploadedChunks = 0;
 
-        var response = await PostAsync<IndexRepositoryRequest, IndexRepositoryResponse>(
+        foreach (var batch in chunks.Chunk(IndexUploadBatchSize))
+        {
+            uploadedChunks += batch.Length;
+            await PostAsync<IndexRepositoryBatchRequest, IndexRepositoryResponse>(
+                client,
+                "api/index/batch",
+                new IndexRepositoryBatchRequest(
+                    repositoryName,
+                    signature,
+                    indexedFiles,
+                    chunks.Count,
+                    batch));
+
+            Console.WriteLine(
+                $"Indexation: {uploadedChunks}/{chunks.Count} chunks envoyes.");
+        }
+
+        var response = await PostAsync<IndexRepositoryCommitRequest, IndexRepositoryResponse>(
             client,
-            "api/index",
-            request);
+            "api/index/commit",
+            new IndexRepositoryCommitRequest(
+                repositoryName,
+                signature,
+                indexedFiles,
+                chunks.Count));
 
         Console.WriteLine(
             $"Indexation terminée: {response.IndexedFiles} fichiers, " +
@@ -187,12 +209,11 @@ internal static class CliApplication
             throw new ArgumentException("La question ne peut pas être vide.");
         }
 
-        var response = await PostAsync<ChatRequest, ChatResponse>(
+        await PostStreamAsync(
             client,
-            noContext ? "api/chat/ask" : "api/chat",
+            noContext ? "api/chat/ask/stream" : "api/chat/stream",
             new ChatRequest(question, repositoryName));
 
-        Console.WriteLine(response.Answer);
         return 0;
     }
 
@@ -205,12 +226,11 @@ internal static class CliApplication
             throw new ArgumentException("La question ne peut pas être vide.");
         }
 
-        var response = await PostAsync<ChatRequest, ChatResponse>(
+        await PostStreamAsync(
             client,
-            "api/chat/ask",
+            "api/chat/ask/stream",
             new ChatRequest(question));
 
-        Console.WriteLine(response.Answer);
         return 0;
     }
 
@@ -282,6 +302,68 @@ internal static class CliApplication
 
         return await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions)
             ?? throw new InvalidOperationException("Le serveur a renvoyÃ© une rÃ©ponse vide.");
+    }
+
+    private static async Task PostStreamAsync<TRequest>(
+        HttpClient client,
+        string path,
+        TRequest request)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = JsonContent.Create(request, options: JsonOptions)
+        };
+        using var response = await client.SendAsync(
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            var detail = string.IsNullOrWhiteSpace(body) ? response.ReasonPhrase : body.Trim();
+            throw new HttpRequestException(
+                $"Le serveur a rÃ©pondu {(int)response.StatusCode} ({detail}).");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        var wroteAnyContent = false;
+
+        while (await reader.ReadLineAsync() is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var chunk = JsonSerializer.Deserialize<ChatStreamChunk>(
+                line,
+                JsonOptions);
+            if (chunk is null)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(chunk.Error))
+            {
+                throw new HttpRequestException(chunk.Error);
+            }
+
+            if (!string.IsNullOrEmpty(chunk.Delta))
+            {
+                Console.Write(chunk.Delta);
+                wroteAnyContent = true;
+            }
+
+            if (chunk.Done)
+            {
+                break;
+            }
+        }
+
+        if (wroteAnyContent)
+        {
+            Console.WriteLine();
+        }
     }
 
     private static async Task<string> GetStringAsync(HttpClient client, string path)

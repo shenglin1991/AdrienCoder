@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using AdrienCoder.WorkerGpu.Configuration;
 using Microsoft.Extensions.Options;
@@ -30,9 +32,13 @@ public sealed class OllamaClient : ILocalLlmClient, IDisposable
             false,
             new OllamaChatOptions(_options.NumPredict));
 
-        using var response = await _httpClient.PostAsJsonAsync(
-            "api/chat",
-            request,
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/chat")
+        {
+            Content = JsonContent.Create(request)
+        };
+        using var response = await _httpClient.SendAsync(
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
 
         response.EnsureSuccessStatusCode();
@@ -43,6 +49,60 @@ public sealed class OllamaClient : ILocalLlmClient, IDisposable
         return result?.Message?.Content
             ?? throw new InvalidOperationException(
                 "Ollama returned a response without message content.");
+    }
+
+    public async IAsyncEnumerable<string> StreamChatAsync(
+        string prompt,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var request = new OllamaChatRequest(
+            _options.Model,
+            [new OllamaChatMessage("user", prompt)],
+            true,
+            new OllamaChatOptions(_options.NumPredict));
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/chat")
+        {
+            Content = JsonContent.Create(request)
+        };
+        using var response = await _httpClient.SendAsync(
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            using var document = JsonDocument.Parse(line);
+            if (document.RootElement.TryGetProperty("done", out var done)
+                && done.GetBoolean())
+            {
+                yield break;
+            }
+
+            if (!document.RootElement.TryGetProperty("message", out var message)
+                || !message.TryGetProperty("content", out var contentElement))
+            {
+                continue;
+            }
+
+            var content = contentElement.GetString();
+            if (!string.IsNullOrEmpty(content))
+            {
+                yield return content;
+            }
+        }
     }
 
     public void Dispose()

@@ -74,10 +74,15 @@ public sealed class RepositoryIndexingService
             })
             .ToList();
 
-        await _qdrantService.UpsertChunksAsync(
+        await _qdrantService.UpsertChunkBatchAsync(
             chunks,
             request.RepositoryName,
             request.RepositorySignature);
+
+        await _qdrantService.CommitRepositoryIndexAsync(
+            request.RepositoryName,
+            request.RepositorySignature,
+            chunks.Count);
 
         _logger.LogInformation(
             "Indexed repository {RepositoryName} with {ChunkCount} chunks.",
@@ -87,19 +92,77 @@ public sealed class RepositoryIndexingService
         return new IndexRepositoryResponse(indexedFiles, chunks.Count, true);
     }
 
+    public async Task<IndexRepositoryResponse> IndexBatchAsync(
+        IndexRepositoryBatchRequest request)
+    {
+        ValidateRepository(request.RepositoryName, request.RepositorySignature);
+
+        if (request.TotalChunks <= 0)
+        {
+            throw new InvalidOperationException(
+                "At least one code chunk is required.");
+        }
+
+        if (request.Chunks.Count == 0)
+        {
+            return new IndexRepositoryResponse(
+                request.IndexedFiles,
+                request.TotalChunks,
+                true);
+        }
+
+        var chunks = request.Chunks
+            .Select(chunk => new CodeChunk
+            {
+                Id = chunk.Id,
+                FilePath = chunk.FilePath,
+                Content = chunk.Content,
+                ChunkIndex = chunk.ChunkIndex
+            })
+            .ToList();
+
+        await _qdrantService.UpsertChunkBatchAsync(
+            chunks,
+            request.RepositoryName,
+            request.RepositorySignature);
+
+        return new IndexRepositoryResponse(
+            request.IndexedFiles,
+            request.TotalChunks,
+            true);
+    }
+
+    public async Task<IndexRepositoryResponse> CommitIndexAsync(
+        IndexRepositoryCommitRequest request)
+    {
+        ValidateRepository(request.RepositoryName, request.RepositorySignature);
+
+        if (request.Chunks <= 0)
+        {
+            throw new InvalidOperationException(
+                "At least one code chunk is required.");
+        }
+
+        await _qdrantService.CommitRepositoryIndexAsync(
+            request.RepositoryName,
+            request.RepositorySignature,
+            request.Chunks);
+
+        _logger.LogInformation(
+            "Committed repository {RepositoryName} with {ChunkCount} chunks.",
+            request.RepositoryName,
+            request.Chunks);
+
+        return new IndexRepositoryResponse(
+            request.IndexedFiles,
+            request.Chunks,
+            true);
+    }
+
     public async Task<IndexRepositoryResponse> CheckIndexAsync(
         IndexRepositoryCheckRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.RepositoryName))
-        {
-            throw new InvalidOperationException("RepositoryName is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(request.RepositorySignature))
-        {
-            throw new InvalidOperationException(
-                "RepositorySignature is required.");
-        }
+        ValidateRepository(request.RepositoryName, request.RepositorySignature);
 
         if (request.Chunks <= 0)
         {
@@ -129,6 +192,22 @@ public sealed class RepositoryIndexingService
             request.IndexedFiles,
             request.Chunks,
             true);
+    }
+
+    private static void ValidateRepository(
+        string repositoryName,
+        string repositorySignature)
+    {
+        if (string.IsNullOrWhiteSpace(repositoryName))
+        {
+            throw new InvalidOperationException("RepositoryName is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(repositorySignature))
+        {
+            throw new InvalidOperationException(
+                "RepositorySignature is required.");
+        }
     }
 
     public async Task<List<VectorSearchResult>> SearchAsync(

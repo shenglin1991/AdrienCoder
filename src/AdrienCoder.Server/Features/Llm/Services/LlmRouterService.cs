@@ -1,4 +1,5 @@
 using AdrienCoder.Server.Features.Llm.Models;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
 
 namespace AdrienCoder.Server.Features.Llm.Services;
@@ -41,6 +42,28 @@ public class LlmRouterService : ILLMService
     {
         return ExecuteWithFallbackAsync(
             service => service.AskWithContextAsync(question, context));
+    }
+
+    public IAsyncEnumerable<string> StreamAskAsync(
+        string question,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteStreamingWithFallbackAsync(
+            service => service.StreamAskAsync(question, cancellationToken),
+            cancellationToken);
+    }
+
+    public IAsyncEnumerable<string> StreamAskWithContextAsync(
+        string question,
+        string context,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteStreamingWithFallbackAsync(
+            service => service.StreamAskWithContextAsync(
+                question,
+                context,
+                cancellationToken),
+            cancellationToken);
     }
 
     public Task<string> GetModelsAsync()
@@ -97,6 +120,30 @@ public class LlmRouterService : ILLMService
         throw new InvalidOperationException(
             "No configured LLM provider is available.",
             lastException);
+    }
+
+    private async IAsyncEnumerable<string> ExecuteStreamingWithFallbackAsync(
+        Func<ILLMService, IAsyncEnumerable<string>> operation,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var provider in GetProviders())
+        {
+            if (!await provider.Service.IsHealthyAsync())
+            {
+                continue;
+            }
+
+            await foreach (var delta in operation(provider.Service)
+                .WithCancellation(cancellationToken))
+            {
+                yield return delta;
+            }
+
+            yield break;
+        }
+
+        throw new InvalidOperationException(
+            "No configured LLM provider is available.");
     }
 
     private IEnumerable<(string Name, ILLMService Service)> GetProviders()

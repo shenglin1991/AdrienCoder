@@ -297,7 +297,7 @@ public class QdrantService
             nextOffset);
     }
 
-    public async Task UpsertChunksAsync(
+    public async Task UpsertChunkBatchAsync(
         IReadOnlyList<CodeChunk> chunks,
         string repositoryPath,
         string repositorySignature)
@@ -354,6 +354,15 @@ public class QdrantService
         {
             await UpsertPointsAsync(batch);
         }
+    }
+
+    public async Task CommitRepositoryIndexAsync(
+        string repositoryPath,
+        string repositorySignature,
+        int chunkCount)
+    {
+        await CreateCollectionIfNotExistsAsync();
+        await DeleteStaleRepositoryChunksAsync(repositoryPath, repositorySignature);
 
         // The marker persists the repository signature across API restarts.
         var repositoryStatePoint = new
@@ -365,7 +374,7 @@ public class QdrantService
                 pointType = "repositoryState",
                 repositoryPath,
                 repositorySignature,
-                chunkCount = chunks.Count
+                chunkCount
             }
         };
 
@@ -373,9 +382,46 @@ public class QdrantService
         var activeIndexPoint = CreateActiveIndexPoint(
             repositoryPath,
             repositorySignature,
-            chunks.Count);
+            chunkCount);
 
         await UpsertPointsAsync(new[] { repositoryStatePoint, activeIndexPoint });
+    }
+
+    private async Task DeleteStaleRepositoryChunksAsync(
+        string repositoryPath,
+        string repositorySignature)
+    {
+        var response = await _httpClient.PostAsJsonAsync(
+            $"collections/{_options.CollectionName}/points/delete?wait=true",
+            new
+            {
+                filter = new
+                {
+                    must = new object[]
+                    {
+                        new
+                        {
+                            key = "pointType",
+                            match = new { value = "chunk" }
+                        },
+                        new
+                        {
+                            key = "repositoryPath",
+                            match = new { value = repositoryPath }
+                        }
+                    },
+                    must_not = new object[]
+                    {
+                        new
+                        {
+                            key = "repositorySignature",
+                            match = new { value = repositorySignature }
+                        }
+                    }
+                }
+            });
+
+        response.EnsureSuccessStatusCode();
     }
 
     private async Task UpsertPointsAsync(IReadOnlyList<object> points)

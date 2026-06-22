@@ -30,6 +30,35 @@ public sealed class IndexController : ControllerBase
         }
     }
 
+    [HttpPost("batch")]
+    [RequestSizeLimit(16 * 1024 * 1024)]
+    public async Task<ActionResult<IndexRepositoryResponse>> IndexRepositoryBatch(
+        [FromBody] IndexRepositoryBatchRequest request)
+    {
+        try
+        {
+            return Ok(await _repositoryIndexingService.IndexBatchAsync(request));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+    }
+
+    [HttpPost("commit")]
+    public async Task<ActionResult<IndexRepositoryResponse>> CommitRepository(
+        [FromBody] IndexRepositoryCommitRequest request)
+    {
+        try
+        {
+            return Ok(await _repositoryIndexingService.CommitIndexAsync(request));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(exception.Message);
+        }
+    }
+
     [HttpPost("check")]
     public async Task<ActionResult<IndexRepositoryResponse>> CheckRepository(
         [FromBody] IndexRepositoryCheckRequest request)

@@ -24,6 +24,13 @@ public class AskService
         return _llmService.AskAsync(question);
     }
 
+    public IAsyncEnumerable<string> StreamAskAsync(
+        string question,
+        CancellationToken cancellationToken = default)
+    {
+        return _llmService.StreamAskAsync(question, cancellationToken);
+    }
+
     public async Task<string> AskRepositoryAsync(
         string question,
         string? repositoryName = null)
@@ -32,5 +39,19 @@ public class AskService
             .BuildContextFromExistingIndexAsync(question, repositoryName);
 
         return await _llmService.AskWithContextAsync(question, context);
+    }
+
+    public async Task<IAsyncEnumerable<string>> StreamAskRepositoryAsync(
+        string question,
+        string? repositoryName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var context = await _repositoryIndexingService
+            .BuildContextFromExistingIndexAsync(question, repositoryName);
+
+        return _llmService.StreamAskWithContextAsync(
+            question,
+            context,
+            cancellationToken);
     }
 }

@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using AdrienCoder.Server.Features.Llm.Models;
 using Microsoft.Extensions.Options;
@@ -87,6 +88,92 @@ public class OpenAiCompatibleService : ILLMService
         """;
 
         return await AskAsync(fullPrompt);
+    }
+
+    public async IAsyncEnumerable<string> StreamAskAsync(
+        string question,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            model = _options.Model,
+            messages = new[]
+            {
+                new { role = "system", content = _llmOptions.SystemPrompt },
+                new { role = "user", content = question }
+            },
+            temperature = 0.2,
+            max_tokens = _llmOptions.MaxOutputTokens,
+            stream = true
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
+        {
+            Content = JsonContent.Create(payload)
+        };
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new Exception($"LLM error {(int)response.StatusCode}: {error}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line)
+                || !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var data = line["data:".Length..].Trim();
+            if (data == "[DONE]")
+            {
+                yield break;
+            }
+
+            using var document = JsonDocument.Parse(data);
+            var choice = document.RootElement.GetProperty("choices")[0];
+            if (!choice.TryGetProperty("delta", out var delta)
+                || !delta.TryGetProperty("content", out var contentElement))
+            {
+                continue;
+            }
+
+            var content = contentElement.GetString();
+            if (!string.IsNullOrEmpty(content))
+            {
+                yield return content;
+            }
+        }
+    }
+
+    public IAsyncEnumerable<string> StreamAskWithContextAsync(
+        string question,
+        string context,
+        CancellationToken cancellationToken = default)
+    {
+        var fullPrompt = $"""
+        Voici le contexte du projet :
+
+        {context}
+
+        Question :
+        {question}
+
+        Reponds de facon structuree et concise.
+        """;
+
+        return StreamAskAsync(fullPrompt, cancellationToken);
     }
 
     public async Task<string> GetModelsAsync()

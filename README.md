@@ -6,8 +6,8 @@ independamment:
 ```text
 Client.Cli
   -> scanne et decoupe le depot local
-  -> POST /api/index vers le VPS
-  -> POST /api/chat
+  -> POST /api/index/batch puis /api/index/commit vers le VPS
+  -> POST /api/chat/stream
 
 Server
   -> genere les embeddings et stocke les chunks dans Qdrant
@@ -106,8 +106,10 @@ La longueur de sortie LLM se regle avec `LLM:MaxOutputTokens` cote Server et
 `Ollama:NumPredict` cote WorkerGpu.
 Avant l'upload complet, le Client envoie une verification legere basee sur la
 signature du depot: si rien n'a change, le Server reactive simplement l'index
-existant. Lors d'une reindexation partielle, les chunks deja presents avec le
-meme `contentHash` reutilisent leur vecteur Qdrant au lieu de recalculer
+existant. Si le depot a change, le Client envoie les chunks par lots, puis un
+commit atomique active la nouvelle signature et supprime les anciens chunks du
+meme depot. Lors d'une reindexation partielle, les chunks deja presents avec
+le meme `contentHash` reutilisent leur vecteur Qdrant au lieu de recalculer
 l'embedding.
 
 Pour gRPC, le reverse proxy doit accepter HTTP/2 et conserver les connexions
@@ -194,10 +196,14 @@ relatifs au depot.
 | --- | --- | --- |
 | `POST` | `/api/index/check` | Verification legere avant upload complet |
 | `POST` | `/api/index` | Upload d'un depot deja decoupe par le Client |
+| `POST` | `/api/index/batch` | Upload incremental d'un lot de chunks |
+| `POST` | `/api/index/commit` | Activation de la nouvelle signature et purge des vieux chunks |
 | `GET` | `/api/index/status` | Index Qdrant actif |
 | `GET` | `/api/index/chunks` | Consultation paginee des chunks actifs |
 | `POST` | `/api/chat` | Question RAG sur l'index actif ou le `repositoryName` demande |
 | `POST` | `/api/chat/ask` | Question sans contexte RAG |
+| `POST` | `/api/chat/stream` | Question RAG en streaming NDJSON |
+| `POST` | `/api/chat/ask/stream` | Question sans contexte RAG en streaming NDJSON |
 | `GET` | `/api/status` | Etat Qdrant et LLM |
 | `GET` | `/api/status/models` | Modeles du backend LLM actif |
 | `GET` | `/api/workers` | Workers GPU connectes et dernier heartbeat |
@@ -227,9 +233,8 @@ partent donc vers `https://adrien-sheng-lin.fr/adriencoder/api/...`.
 - La file de jobs et le registre des workers sont en memoire. Le Server doit
   donc tourner en une seule instance.
 - Un Worker traite un job a la fois.
-- L'upload HTTP des chunks reste monolithique avec une limite de 100 Mio quand
-  le depot a change. Un protocole par lots sera preferable pour les tres grands
-  depots.
+- Le Client garde encore la liste des chunks en memoire avant de les envoyer
+  par lots. Pour des depots enormes, le scan pourra devenir streaming aussi.
 - `ask` et `chat --no-context` ne font pas de recherche RAG. Sans
   `repositoryName`, `chat` utilise encore l'index actif global. Avec
   `repositoryName`, il cible l'index nomme.
